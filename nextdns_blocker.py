@@ -293,8 +293,6 @@ def load_config() -> Dict[str, str]:
         'api_key': os.getenv('NEXTDNS_API_KEY'),
         'profile_id': os.getenv('NEXTDNS_PROFILE_ID'),
         'timezone': os.getenv('TIMEZONE', 'America/Mexico_City'),
-        'unlock_hour': int(os.getenv('UNLOCK_HOUR', '18')),
-        'lock_hour': int(os.getenv('LOCK_HOUR', '22')),
         'script_dir': script_dir
     }
 
