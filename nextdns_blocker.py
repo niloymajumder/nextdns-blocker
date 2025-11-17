@@ -162,8 +162,11 @@ class ScheduleEvaluator:
         try:
             self.timezone = pytz.timezone(timezone_str)
         except pytz.exceptions.UnknownTimeZoneError:
-            logger.warning(f"Unknown timezone: {timezone_str}, using UTC")
-            self.timezone = pytz.UTC
+            logger.error(f"❌ Invalid timezone: '{timezone_str}'")
+            logger.error("Valid timezones: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones")
+            logger.error("Example valid timezones: America/New_York, Europe/London, Asia/Tokyo")
+            logger.error("Please update TIMEZONE in .env file and try again.")
+            raise ValueError(f"Invalid timezone: {timezone_str}")
 
     def _parse_time(self, time_str: str) -> time:
         """Parse time string in format HH:MM to time object"""
@@ -217,15 +220,25 @@ class ScheduleEvaluator:
         # Check if current time falls within any available hours
         for schedule_block in schedule_config['available_hours']:
             # Check if today is in the configured days
-            configured_days = [self.DAYS_MAP[day.lower()] for day in schedule_block.get('days', [])]
+            try:
+                configured_days = [self.DAYS_MAP[day.lower()] for day in schedule_block.get('days', [])]
+            except KeyError as e:
+                logger.error(f"Invalid day name in schedule: {e}. Valid days are: {list(self.DAYS_MAP.keys())}")
+                logger.error("Configuration error - blocking domain by default")
+                return True  # Block domain on configuration error
 
             if current_day not in configured_days:
                 continue
 
             # Check if current time is within any time range for today
             for time_range in schedule_block.get('time_ranges', []):
-                start = self._parse_time(time_range['start'])
-                end = self._parse_time(time_range['end'])
+                try:
+                    start = self._parse_time(time_range['start'])
+                    end = self._parse_time(time_range['end'])
+                except ValueError as e:
+                    logger.error(f"Invalid time format in schedule: {e}")
+                    logger.error("Configuration error - blocking domain by default")
+                    return True  # Block domain on configuration error
 
                 if self._is_time_in_range(current_time, start, end):
                     logger.debug(f"Within available hours: {time_range['start']}-{time_range['end']}")
@@ -234,6 +247,117 @@ class ScheduleEvaluator:
         # Not within any available hours, should be blocked
         logger.debug("Outside available hours, domain should be blocked")
         return True
+
+
+def validate_domain_config(domain_config: Dict, domain_index: int) -> List[str]:
+    """
+    Validates a domain configuration and returns list of error messages
+
+    Args:
+        domain_config: The domain configuration dict to validate
+        domain_index: Index of domain in config (for error messages)
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors = []
+
+    # Validate domain field exists
+    if 'domain' not in domain_config:
+        errors.append(f"Domain #{domain_index}: Missing 'domain' field")
+        return errors  # Can't validate further without domain name
+
+    domain_name = domain_config['domain']
+
+    # Validate domain is not empty
+    if not domain_name or not domain_name.strip():
+        errors.append(f"Domain #{domain_index}: Empty domain name")
+        return errors
+
+    schedule = domain_config.get('schedule')
+
+    # If no schedule, that's valid (means always blocked)
+    if schedule is None:
+        return errors
+
+    # Validate schedule structure
+    if not isinstance(schedule, dict):
+        errors.append(f"Domain '{domain_name}': schedule must be a dict or null")
+        return errors
+
+    if 'available_hours' not in schedule:
+        # Empty schedule is valid (means always blocked)
+        return errors
+
+    available_hours = schedule['available_hours']
+
+    if not isinstance(available_hours, list):
+        errors.append(f"Domain '{domain_name}': available_hours must be a list")
+        return errors
+
+    # Valid day names
+    valid_days = {'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
+
+    # Validate each schedule block
+    for block_idx, schedule_block in enumerate(available_hours):
+        if not isinstance(schedule_block, dict):
+            errors.append(f"Domain '{domain_name}': schedule block #{block_idx} must be a dict")
+            continue
+
+        # Validate days
+        days = schedule_block.get('days', [])
+        if not isinstance(days, list):
+            errors.append(f"Domain '{domain_name}': block #{block_idx} 'days' must be a list")
+        else:
+            for day in days:
+                if not isinstance(day, str):
+                    errors.append(f"Domain '{domain_name}': block #{block_idx} day must be string, got {type(day)}")
+                elif day.lower() not in valid_days:
+                    errors.append(f"Domain '{domain_name}': block #{block_idx} invalid day '{day}'. Valid: {sorted(valid_days)}")
+
+        # Validate time_ranges
+        time_ranges = schedule_block.get('time_ranges', [])
+        if not isinstance(time_ranges, list):
+            errors.append(f"Domain '{domain_name}': block #{block_idx} 'time_ranges' must be a list")
+        else:
+            for range_idx, time_range in enumerate(time_ranges):
+                if not isinstance(time_range, dict):
+                    errors.append(f"Domain '{domain_name}': block #{block_idx} range #{range_idx} must be a dict")
+                    continue
+
+                # Validate start time
+                if 'start' not in time_range:
+                    errors.append(f"Domain '{domain_name}': block #{block_idx} range #{range_idx} missing 'start'")
+                else:
+                    start = time_range['start']
+                    if not isinstance(start, str):
+                        errors.append(f"Domain '{domain_name}': block #{block_idx} range #{range_idx} 'start' must be string")
+                    elif not _is_valid_time_format(start):
+                        errors.append(f"Domain '{domain_name}': block #{block_idx} range #{range_idx} invalid start time '{start}' (expected HH:MM)")
+
+                # Validate end time
+                if 'end' not in time_range:
+                    errors.append(f"Domain '{domain_name}': block #{block_idx} range #{range_idx} missing 'end'")
+                else:
+                    end = time_range['end']
+                    if not isinstance(end, str):
+                        errors.append(f"Domain '{domain_name}': block #{block_idx} range #{range_idx} 'end' must be string")
+                    elif not _is_valid_time_format(end):
+                        errors.append(f"Domain '{domain_name}': block #{block_idx} range #{range_idx} invalid end time '{end}' (expected HH:MM)")
+
+    return errors
+
+
+def _is_valid_time_format(time_str: str) -> bool:
+    """Check if time string is in valid HH:MM format"""
+    try:
+        parts = time_str.split(':')
+        if len(parts) != 2:
+            return False
+        hours, minutes = map(int, parts)
+        return 0 <= hours <= 23 and 0 <= minutes <= 59
+    except (ValueError, AttributeError):
+        return False
 
 
 def load_domain_configs(script_dir: str) -> List[Dict]:
@@ -264,6 +388,22 @@ def load_domain_configs(script_dir: str) -> List[Dict]:
         domains_config = config.get('domains', [])
         if not domains_config:
             logger.error("❌ No domains found in domains.json")
+            sys.exit(1)
+
+        # Validate each domain configuration
+        all_errors = []
+        for idx, domain_config in enumerate(domains_config):
+            errors = validate_domain_config(domain_config, idx)
+            all_errors.extend(errors)
+
+        # If there are validation errors, report them and exit
+        if all_errors:
+            logger.error("❌ Configuration validation failed:")
+            for error in all_errors:
+                logger.error(f"  - {error}")
+            logger.error("")
+            logger.error("Please fix the errors in domains.json and try again.")
+            logger.error("See domains.json.example for correct format.")
             sys.exit(1)
 
         logger.info(f"Loaded {len(domains_config)} domain(s) with schedules from domains.json")
@@ -327,7 +467,11 @@ def main():
 
     if action == "sync":
         # Sync command: syncs domains based on their schedules
-        evaluator = ScheduleEvaluator(config['timezone'])
+        try:
+            evaluator = ScheduleEvaluator(config['timezone'])
+        except ValueError:
+            # Error already logged in ScheduleEvaluator.__init__
+            sys.exit(1)
 
         logger.info(f"Synchronizing {len(domain_configs)} domain(s) based on schedules...")
 
