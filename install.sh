@@ -1,144 +1,115 @@
 #!/bin/bash
-# NextDNS Blocker - Installation Script for EC2
+# NextDNS Blocker - Install
 
 set -e
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+AUDIT_DIR="$HOME/.local/share/nextdns-audit/logs"
 
-INSTALL_DIR="$HOME/nextdns-blocker"
+echo ""
+echo "  nextdns-blocker install"
+echo "  -----------------------"
+echo ""
 
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  NextDNS Blocker - Installation${NC}"
-echo -e "${BLUE}========================================${NC}"
+# Ask for install directory
+DEFAULT_DIR="$(cd "$(dirname "$0")" && pwd)"
+read -p "  install path [$DEFAULT_DIR]: " INSTALL_DIR
+INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_DIR}"
 echo ""
 
 # Check Python 3
-echo -e "${YELLOW}[1/7]${NC} Checking Python 3..."
+echo "  [1/9] python3"
 if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}❌ Python 3 not found${NC}"
-    echo "Installing Python 3..."
     sudo yum install -y python3 || sudo apt-get install -y python3
 fi
 
-PYTHON_VERSION=$(python3 --version)
-echo -e "${GREEN}✓${NC} $PYTHON_VERSION installed"
-echo ""
-
 # Check pip
-echo -e "${YELLOW}[2/7]${NC} Checking pip..."
+echo "  [2/9] pip"
 if ! command -v pip3 &> /dev/null; then
-    echo "Installing pip..."
     sudo yum install -y python3-pip || sudo apt-get install -y python3-pip
 fi
-echo -e "${GREEN}✓${NC} pip installed"
-echo ""
 
 # Verify directory
-echo -e "${YELLOW}[3/7]${NC} Setting up installation directory..."
-cd "$HOME"
+echo "  [3/9] directory"
 if [ ! -d "$INSTALL_DIR" ]; then
-    echo -e "${RED}❌ Directory $INSTALL_DIR not found${NC}"
-    echo "Please upload files to $INSTALL_DIR first"
+    echo "  error: $INSTALL_DIR not found"
     exit 1
 fi
 cd "$INSTALL_DIR"
-echo -e "${GREEN}✓${NC} Directory configured: $INSTALL_DIR"
-echo ""
 
 # Install dependencies
-echo -e "${YELLOW}[4/7]${NC} Installing Python dependencies..."
-pip3 install -r requirements.txt --user
-echo -e "${GREEN}✓${NC} Dependencies installed"
-echo ""
+echo "  [4/9] dependencies"
+pip3 install -r requirements.txt --user --quiet
+pip3 install nuitka --user --quiet
 
-# Set permissions
-echo -e "${YELLOW}[5/7]${NC} Setting permissions..."
-chmod +x nextdns_blocker.py
-echo -e "${GREEN}✓${NC} Permissions set"
-echo ""
+# Install gcc if needed
+echo "  [5/9] compiler"
+if ! command -v gcc &> /dev/null; then
+    sudo yum install -y gcc || sudo apt-get install -y gcc
+fi
 
-# Verify .env file
-echo -e "${YELLOW}[6/7]${NC} Verifying configuration..."
+# Verify config files
+echo "  [6/9] config"
 if [ ! -f "$INSTALL_DIR/.env" ]; then
-    echo -e "${RED}❌ .env file not found${NC}"
-    echo ""
-    echo "Please create .env file:"
-    echo "  1. Copy template: cp .env.example .env"
-    echo "  2. Edit file: nano .env"
-    echo "  3. Add your NEXTDNS_API_KEY and NEXTDNS_PROFILE_ID"
-    echo "  4. Run this script again"
+    echo "  error: .env not found"
     exit 1
 fi
-
-if grep -q "tu_api_key_aqui\|your_api_key_here" .env; then
-    echo -e "${RED}❌ .env not configured correctly${NC}"
-    echo "Please edit .env and add your real API key"
-    exit 1
-fi
-
-# Verify domains.json exists
 if [ ! -f "$INSTALL_DIR/domains.json" ]; then
-    echo -e "${RED}❌ domains.json file not found${NC}"
-    echo ""
-    echo "Please create domains.json file:"
-    echo "  1. Copy example: cp domains.json.example domains.json"
-    echo "  2. Edit file: nano domains.json"
-    echo "  3. Configure your domains and schedules"
-    echo "  4. Run this script again"
+    echo "  error: domains.json not found"
     exit 1
 fi
 
-# Validate JSON syntax
-if ! python3 -m json.tool "$INSTALL_DIR/domains.json" > /dev/null 2>&1; then
-    echo -e "${RED}❌ domains.json has invalid JSON syntax${NC}"
-    echo "Please fix the JSON errors and run this script again"
-    exit 1
-fi
+# Create audit directory
+echo "  [7/9] directories"
+mkdir -p "$AUDIT_DIR"
 
-echo -e "${GREEN}✓${NC} Configuration valid"
-echo ""
+# Compile to binary
+echo "  [8/9] compiling"
+echo "         blocker..."
+python3 -m nuitka --onefile --quiet --output-filename=blocker.bin nextdns_blocker.py 2>/dev/null || \
+python3 -m nuitka --onefile --output-filename=blocker.bin nextdns_blocker.py
+
+echo "         watchdog..."
+python3 -m nuitka --onefile --quiet --output-filename=watchdog.bin watchdog.py 2>/dev/null || \
+python3 -m nuitka --onefile --output-filename=watchdog.bin watchdog.py
+
+chmod +x blocker.bin watchdog.bin
+
+# Remove source files
+rm -f nextdns_blocker.py watchdog.py
+rm -rf nextdns_blocker.build nextdns_blocker.dist nextdns_blocker.onefile-build
+rm -rf watchdog.build watchdog.dist watchdog.onefile-build
+rm -f *.spec 2>/dev/null || true
 
 # Setup cron jobs
-echo -e "${YELLOW}[7/7]${NC} Setting up cron jobs..."
+echo "  [9/9] cron"
 
-# Sync every 10 minutes based on domain schedules
-CRON_SYNC="*/10 * * * * cd $INSTALL_DIR && /usr/bin/python3 nextdns_blocker.py sync >> $INSTALL_DIR/logs/cron.log 2>&1"
+CRON_SYNC="*/2 * * * * cd $INSTALL_DIR && ./blocker.bin sync >> $AUDIT_DIR/cron.log 2>&1"
+CRON_WD="* * * * * cd $INSTALL_DIR && ./watchdog.bin check >> $AUDIT_DIR/wd.log 2>&1"
 
-# Remove old cron jobs
-crontab -l 2>/dev/null | grep -v "nextdns_blocker.py" | crontab - 2>/dev/null || true
+crontab -l 2>/dev/null | grep -v "blocker" | grep -v "watchdog" | grep -v "nextdns" | crontab - 2>/dev/null || true
+(crontab -l 2>/dev/null; echo "$CRON_SYNC"; echo "$CRON_WD") | crontab -
 
-# Add new sync cron job
-(crontab -l 2>/dev/null; echo "$CRON_SYNC") | crontab -
-
-echo -e "${GREEN}✓${NC} Cron job configured:"
-echo "   - Sync: Every 10 minutes (schedule-based blocking)"
+# Run initial sync
 echo ""
+echo "  syncing..."
+./blocker.bin sync || true
 
-# Verify installation
-echo -e "${BLUE}========================================${NC}"
-echo -e "${GREEN}✅ Installation completed${NC}"
-echo -e "${BLUE}========================================${NC}"
+# Done
 echo ""
-echo "Checking current status..."
-python3 nextdns_blocker.py status
+echo "  done"
 echo ""
-
-echo -e "${BLUE}Info:${NC}"
-echo "  📁 Directory: $INSTALL_DIR"
-echo "  📝 Logs: $INSTALL_DIR/logs/"
-echo "  ⏰ Sync: Every 10 minutes (schedule-based)"
-echo "  📋 Config: domains.json"
+echo "  files"
+echo "    blocker.bin    main binary"
+echo "    watchdog.bin   cron protector"
+echo "    domains.json   schedule config"
+echo "    .env           credentials"
 echo ""
-echo -e "${BLUE}Commands:${NC}"
-echo "  Check status:  python3 $INSTALL_DIR/nextdns_blocker.py status"
-echo "  Manual sync:   python3 $INSTALL_DIR/nextdns_blocker.py sync"
-echo "  Force block:   python3 $INSTALL_DIR/nextdns_blocker.py block"
-echo "  Force unblock: python3 $INSTALL_DIR/nextdns_blocker.py unblock"
-echo "  View logs:     tail -f $INSTALL_DIR/logs/nextdns_blocker.log"
-echo "  View cron:     crontab -l"
+echo "  schedule"
+echo "    sync           every 2 min"
+echo "    watchdog       every 1 min"
 echo ""
-echo -e "${GREEN}Done! System is configured and running.${NC}"
+echo "  commands"
+echo "    ./blocker.bin status"
+echo "    ./blocker.bin sync"
+echo "    ./watchdog.bin status"
+echo ""
