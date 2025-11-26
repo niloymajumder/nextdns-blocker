@@ -130,24 +130,46 @@ def validate_domain_config(config: Dict, index: int) -> List[str]:
     return errors
 
 
-def load_domains(script_dir: str) -> List[Dict]:
-    json_file = os.path.join(script_dir, 'domains.json')
-    if not os.path.exists(json_file):
-        logger.error(f"Config not found: {json_file}")
-        sys.exit(1)
-    try:
-        with open(json_file, 'r') as f: config = json.load(f)
-        domains = config.get('domains', [])
-        if not domains: logger.error("No domains"); sys.exit(1)
-        errors = []
-        for i, d in enumerate(domains): errors.extend(validate_domain_config(d, i))
-        if errors:
-            for e in errors: logger.error(e)
+def load_domains(script_dir: str, domains_url: Optional[str] = None) -> List[Dict]:
+    config = None
+
+    if domains_url:
+        try:
+            r = requests.get(domains_url, timeout=10)
+            r.raise_for_status()
+            config = r.json()
+            logger.info(f"Loaded domains from URL: {domains_url}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to load from URL: {e}")
             sys.exit(1)
-        return domains
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON error: {e}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON error from URL: {e}")
+            sys.exit(1)
+    else:
+        json_file = os.path.join(script_dir, 'domains.json')
+        if not os.path.exists(json_file):
+            logger.error(f"Config not found: {json_file}")
+            sys.exit(1)
+        try:
+            with open(json_file, 'r') as f:
+                config = json.load(f)
+            logger.info("Loaded domains from local file")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON error: {e}")
+            sys.exit(1)
+
+    domains = config.get('domains', [])
+    if not domains:
+        logger.error("No domains")
         sys.exit(1)
+    errors = []
+    for i, d in enumerate(domains):
+        errors.extend(validate_domain_config(d, i))
+    if errors:
+        for e in errors:
+            logger.error(e)
+        sys.exit(1)
+    return domains
 
 
 def load_config() -> Dict[str, str]:
@@ -164,6 +186,7 @@ def load_config() -> Dict[str, str]:
         'api_key': os.getenv('NEXTDNS_API_KEY'),
         'profile_id': os.getenv('NEXTDNS_PROFILE_ID'),
         'timezone': os.getenv('TIMEZONE', 'America/Mexico_City'),
+        'domains_url': os.getenv('DOMAINS_URL'),
         'script_dir': script_dir
     }
     if not config['api_key']: logger.error("No API key"); sys.exit(1)
@@ -185,7 +208,7 @@ def main():
 
     config = load_config()
     client = NextDNSClient(config['api_key'], config['profile_id'])
-    domains = load_domains(config['script_dir'])
+    domains = load_domains(config['script_dir'], config.get('domains_url'))
 
     if action == "sync":
         try: scheduler = ScheduleEvaluator(config['timezone'])
