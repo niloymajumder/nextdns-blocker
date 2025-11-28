@@ -69,51 +69,51 @@ Done! The system will now automatically sync every 2 minutes based on your confi
 
 ```bash
 # Sync based on schedules (runs automatically every 2 min)
-./blocker.bin sync
+./blocker sync
 
 # Preview what sync would do without making changes
-./blocker.bin sync --dry-run
+./blocker sync --dry-run
 
 # Sync with verbose output showing all actions
-./blocker.bin sync --verbose
-./blocker.bin sync -v
+./blocker sync --verbose
+./blocker sync -v
 
 # Check current blocking status
-./blocker.bin status
+./blocker status
 
 # Manually unblock a domain (won't work on protected domains)
-./blocker.bin unblock example.com
+./blocker unblock example.com
 
 # Pause all blocking for 30 minutes (default)
-./blocker.bin pause
+./blocker pause
 
 # Pause for custom duration (e.g., 60 minutes)
-./blocker.bin pause 60
+./blocker pause 60
 
 # Resume blocking immediately
-./blocker.bin resume
+./blocker resume
 ```
 
 ### Watchdog Commands
 
 ```bash
 # Check cron status
-./watchdog.bin status
+./watchdog status
 
 # Disable watchdog for 30 minutes
-./watchdog.bin disable 30
+./watchdog disable 30
 
 # Disable watchdog permanently
-./watchdog.bin disable
+./watchdog disable
 
 # Re-enable watchdog
-./watchdog.bin enable
+./watchdog enable
 
 # Manually install cron jobs
-./watchdog.bin install
+./watchdog install
 
 # Remove cron jobs
-./watchdog.bin uninstall
+./watchdog uninstall
 ```
 
 ### Logs
@@ -215,7 +215,7 @@ See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_z
 **Sync not working?**
 - Check cron: `crontab -l` (should see sync job running every 2 minutes)
 - Check logs: `tail -f ~/.local/share/nextdns-audit/logs/app.log`
-- Test manually: `./blocker.bin sync`
+- Test manually: `./blocker sync`
 - Validate JSON: `python3 -m json.tool domains.json`
 
 **Domains.json errors?**
@@ -240,14 +240,14 @@ See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_z
 sudo service cron status || sudo service crond status
 
 # Check watchdog status
-./watchdog.bin status
+./watchdog status
 ```
 
 ## Uninstall
 
 ```bash
 # Remove cron jobs
-./watchdog.bin uninstall
+./watchdog uninstall
 
 # Remove files
 rm -rf ~/nextdns-blocker
