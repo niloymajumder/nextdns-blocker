@@ -6,24 +6,30 @@ Automated system to control domain access with per-domain schedule configuration
 
 - **Per-domain scheduling**: Configure unique availability hours for each domain
 - **Flexible time ranges**: Multiple time windows per day, different schedules per weekday
-- **Automatic synchronization**: Runs every 10 minutes via cron
+- **Protected domains**: Mark domains as protected to prevent accidental unblocking
+- **Pause/Resume**: Temporarily disable blocking without changing configuration
+- **Automatic synchronization**: Runs every 2 minutes via cron with watchdog protection
 - **Timezone-aware**: Respects configured timezone for schedule evaluation
+- **Secure**: File permissions, input validation, and audit logging
 - **NextDNS API integration**: Works via NextDNS denylist
-- **Easy configuration**: JSON-based configuration with examples
+- **Dry-run mode**: Preview changes without applying them
+- **Smart caching**: Reduces API calls with intelligent denylist caching
+- **Rate limiting**: Built-in protection against API rate limits
+- **Exponential backoff**: Automatic retries with increasing delays on failures
 
 ## Requirements
 
-- Python 3.6+
+- Python 3.8+
 - NextDNS account with API key
-- Linux server (tested on Ubuntu/Amazon Linux)
-- Dependencies: `requests`, `pytz` (auto-installed)
+- Linux/macOS server
+- Dependencies: `requests`, `tzdata` (auto-installed)
 
 ## Quick Setup
 
 ### 1. Get NextDNS Credentials
 
 - **API Key**: https://my.nextdns.io/account
-- **Profile ID**: From URL (e.g., `https://my.nextdns.io/abc123` → `abc123`)
+- **Profile ID**: From URL (e.g., `https://my.nextdns.io/abc123` -> `abc123`)
 
 ### 2. Clone Repository
 
@@ -59,18 +65,71 @@ Done! The system will now automatically sync every 2 minutes based on your confi
 
 ## Commands
 
+### Main Blocker Commands
+
 ```bash
 # Sync based on schedules (runs automatically every 2 min)
 ./blocker.bin sync
 
-# Check current status
+# Preview what sync would do without making changes
+./blocker.bin sync --dry-run
+
+# Sync with verbose output showing all actions
+./blocker.bin sync --verbose
+./blocker.bin sync -v
+
+# Check current blocking status
 ./blocker.bin status
 
-# View logs
+# Manually unblock a domain (won't work on protected domains)
+./blocker.bin unblock example.com
+
+# Pause all blocking for 30 minutes (default)
+./blocker.bin pause
+
+# Pause for custom duration (e.g., 60 minutes)
+./blocker.bin pause 60
+
+# Resume blocking immediately
+./blocker.bin resume
+```
+
+### Watchdog Commands
+
+```bash
+# Check cron status
+./watchdog.bin status
+
+# Disable watchdog for 30 minutes
+./watchdog.bin disable 30
+
+# Disable watchdog permanently
+./watchdog.bin disable
+
+# Re-enable watchdog
+./watchdog.bin enable
+
+# Manually install cron jobs
+./watchdog.bin install
+
+# Remove cron jobs
+./watchdog.bin uninstall
+```
+
+### Logs
+
+```bash
+# View application logs
 tail -f ~/.local/share/nextdns-audit/logs/app.log
 
-# View audit log
+# View audit log (all blocking/unblocking actions)
 cat ~/.local/share/nextdns-audit/logs/audit.log
+
+# View cron execution logs
+tail -f ~/.local/share/nextdns-audit/logs/cron.log
+
+# View watchdog logs
+tail -f ~/.local/share/nextdns-audit/logs/wd.log
 
 # View cron jobs
 crontab -l
@@ -78,21 +137,28 @@ crontab -l
 
 ## Configuration
 
+### Environment Variables (.env)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `NEXTDNS_API_KEY` | Yes | - | Your NextDNS API key |
+| `NEXTDNS_PROFILE_ID` | Yes | - | Your NextDNS profile ID |
+| `TIMEZONE` | No | `UTC` | Timezone for schedule evaluation |
+| `API_TIMEOUT` | No | `10` | API request timeout in seconds |
+| `API_RETRIES` | No | `3` | Number of retry attempts |
+| `DOMAINS_URL` | No | - | URL to fetch domains.json from |
+
 ### Domain Schedules
 
 Edit `domains.json` to configure which domains to manage and their availability schedules:
-
-```bash
-nano ~/nextdns-blocker/domains.json
-```
-
-Example configuration:
 
 ```json
 {
   "domains": [
     {
       "domain": "reddit.com",
+      "description": "Social media",
+      "protected": false,
       "schedule": {
         "available_hours": [
           {
@@ -110,10 +176,25 @@ Example configuration:
           }
         ]
       }
+    },
+    {
+      "domain": "gambling-site.com",
+      "description": "Always blocked",
+      "protected": true,
+      "schedule": null
     }
   ]
 }
 ```
+
+#### Domain Configuration Options
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `domain` | Yes | Domain name to manage |
+| `description` | No | Human-readable description |
+| `protected` | No | If `true`, domain cannot be manually unblocked |
+| `schedule` | No | Availability schedule (null = always blocked) |
 
 Changes take effect on next sync (every 2 minutes).
 
@@ -141,6 +222,7 @@ See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_z
 - Ensure valid JSON syntax (use [jsonlint.com](https://jsonlint.com))
 - Check time format is HH:MM (24-hour)
 - Check day names are lowercase (monday, tuesday, etc.)
+- Domain names must be valid (no spaces, special characters)
 - See `domains.json.example` for reference
 
 **Wrong timezone?**
@@ -148,17 +230,24 @@ See [list of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_z
 - Re-run `./install.sh`
 - Check logs to verify timezone is being used
 
+**API timeouts?**
+- Increase `API_TIMEOUT` in `.env` (default: 10 seconds)
+- Increase `API_RETRIES` in `.env` (default: 3 attempts)
+
 **Cron not running?**
 ```bash
 # Check cron service status
 sudo service cron status || sudo service crond status
+
+# Check watchdog status
+./watchdog.bin status
 ```
 
 ## Uninstall
 
 ```bash
 # Remove cron jobs
-crontab -l | grep -v "blocker" | grep -v "watchdog" | crontab -
+./watchdog.bin uninstall
 
 # Remove files
 rm -rf ~/nextdns-blocker
@@ -197,16 +286,31 @@ pytest tests/ -v
 pytest tests/ --cov=nextdns_blocker --cov-report=html
 ```
 
+Current coverage: **97%** with **287 tests**.
+
+### Code Quality
+
+The codebase follows these practices:
+- Type hints on all functions
+- Docstrings with Args/Returns documentation
+- Custom exceptions for error handling
+- Secure file permissions (0o600)
+- Input validation before API calls
+
 ## Documentation
 
 - [SCHEDULE_GUIDE.md](SCHEDULE_GUIDE.md) - Complete schedule configuration guide with examples
 - [domains.json.example](domains.json.example) - Example configuration file
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 
 ## Security
 
 - Never share your `.env` file (contains API key)
 - `.gitignore` is configured to ignore sensitive files
 - All API requests use HTTPS
+- Sensitive files created with `0o600` permissions
+- Domain names validated before API calls
+- Audit log tracks all blocking/unblocking actions
 
 ## License
 

@@ -88,11 +88,18 @@ Improvements to documentation are always welcome:
 nextdns-blocker/
 ├── nextdns_blocker.py   # Main application
 ├── watchdog.py          # Cron protection
-├── tests/               # Test suite
+├── common.py            # Shared utilities (logging, file ops)
+├── tests/               # Test suite (287 tests, 97% coverage)
+│   ├── conftest.py      # Shared pytest fixtures
 │   ├── test_client.py   # API client tests
 │   ├── test_schedule.py # Schedule logic tests
-│   └── test_validation.py # Config validation tests
+│   ├── test_validation.py # Input validation tests
+│   ├── test_config_loading.py # Config loading tests
+│   ├── test_cli_commands.py # CLI command tests
+│   ├── test_pause_protected.py # Pause/protected domain tests
+│   └── test_watchdog.py # Watchdog tests
 ├── domains.json         # Domain configuration
+├── domains.json.example # Example configuration
 └── .env                 # Credentials (not in repo)
 ```
 
