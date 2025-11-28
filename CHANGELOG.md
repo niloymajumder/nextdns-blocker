@@ -38,20 +38,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Base delay: 1 second, max: 30 seconds
   - Retries on timeout, 429, and 5xx errors
 - **is_blocked() Method**: Convenience method in NextDNSClient
-- 287 tests with 97% code coverage
+- **Shared utilities module**: `common.py` with `ensure_log_dir()` for lazy initialization
+- 287 tests with 92% code coverage
 
 ### Changed
 - Default retries increased from 2 to 3
 - URL validation regex is now stricter (requires valid TLD)
 - Overnight range boundary handling improved (end time exclusive)
 - `time` import renamed to `dt_time` to avoid conflicts
+- Log directory creation is now lazy (no side effects on import)
 
 ### Fixed
+- **Race condition in `is_paused()`**: Removed file existence check before acquiring lock
 - **Double fd close bug**: Fixed file descriptor handling in `write_secure_file`
 - **find_domain redundancy**: Simplified return value
-- Documentation now shows correct test coverage (was 77%, now 92%)
+- **Documentation**: Corrected test coverage percentage (92%)
+- **API_RETRIES default**: Fixed inconsistency in .env.example (was 2, now 3)
 
 ### Security
+- Race condition fix prevents potential timing attacks on pause state
 - Rate limiting prevents accidental API abuse
 - Input validation strengthened for URLs
 
