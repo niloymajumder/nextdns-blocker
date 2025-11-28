@@ -109,9 +109,12 @@ class TestShouldBlock:
 
     def _mock_datetime(self, year, month, day, hour, minute):
         """Helper to create a mock datetime with timezone."""
-        import pytz
-        tz = pytz.timezone('America/Mexico_City')
-        return tz.localize(datetime(year, month, day, hour, minute))
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo
+        tz = ZoneInfo('America/Mexico_City')
+        return datetime(year, month, day, hour, minute, tzinfo=tz)
 
     def test_should_not_block_during_available_hours(self, sample_domain_config):
         evaluator = ScheduleEvaluator()
@@ -180,11 +183,11 @@ class TestTimezone:
 
     def test_valid_timezone(self):
         evaluator = ScheduleEvaluator("America/New_York")
-        assert evaluator.tz.zone == "America/New_York"
+        assert str(evaluator.tz) == "America/New_York"
 
     def test_default_timezone(self):
         evaluator = ScheduleEvaluator()
-        assert evaluator.tz.zone == "America/Mexico_City"
+        assert str(evaluator.tz) == "UTC"
 
     def test_invalid_timezone(self):
         with pytest.raises(ValueError, match="Invalid timezone"):
@@ -192,4 +195,4 @@ class TestTimezone:
 
     def test_utc_timezone(self):
         evaluator = ScheduleEvaluator("UTC")
-        assert evaluator.tz.zone == "UTC"
+        assert str(evaluator.tz) == "UTC"

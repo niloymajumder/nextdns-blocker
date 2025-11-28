@@ -1,8 +1,12 @@
 """Pytest fixtures for nextdns-blocker tests."""
 
-import pytest
-import sys
 import os
+import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -58,4 +62,102 @@ def overnight_schedule_config():
                 }
             ]
         }
+    }
+
+
+@pytest.fixture
+def protected_domain_config():
+    """Domain config marked as protected."""
+    return {
+        "domain": "protected.example.com",
+        "description": "Protected domain",
+        "protected": True,
+        "schedule": None
+    }
+
+
+@pytest.fixture
+def mixed_domains_config():
+    """List of domains with mixed protected status."""
+    return [
+        {
+            "domain": "normal.com",
+            "schedule": {"available_hours": [{"days": ["monday"], "time_ranges": [{"start": "09:00", "end": "17:00"}]}]}
+        },
+        {
+            "domain": "protected1.com",
+            "protected": True,
+            "schedule": None
+        },
+        {
+            "domain": "another.com",
+            "protected": False,
+            "schedule": None
+        },
+        {
+            "domain": "protected2.com",
+            "protected": True,
+            "schedule": None
+        }
+    ]
+
+
+@pytest.fixture
+def temp_dir():
+    """Create a temporary directory for test files."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Path(tmpdir)
+
+
+@pytest.fixture
+def mock_env_vars():
+    """Mock environment variables for configuration."""
+    env_vars = {
+        'NEXTDNS_API_KEY': 'test_api_key_12345',
+        'NEXTDNS_PROFILE_ID': 'test_profile_id',
+        'TIMEZONE': 'UTC'
+    }
+    with patch.dict(os.environ, env_vars, clear=False):
+        yield env_vars
+
+
+@pytest.fixture
+def domains_json_content():
+    """Sample domains.json content."""
+    return {
+        "domains": [
+            {
+                "domain": "example.com",
+                "description": "Test domain",
+                "protected": False,
+                "schedule": {
+                    "available_hours": [
+                        {
+                            "days": ["monday", "tuesday"],
+                            "time_ranges": [{"start": "09:00", "end": "17:00"}]
+                        }
+                    ]
+                }
+            },
+            {
+                "domain": "blocked.com",
+                "protected": True,
+                "schedule": None
+            }
+        ]
+    }
+
+
+@pytest.fixture
+def invalid_domains_json():
+    """Invalid domains.json content for error testing."""
+    return {
+        "domains": [
+            {"domain": ""},  # Empty domain
+            {"description": "Missing domain"},  # No domain field
+            {
+                "domain": "bad-schedule.com",
+                "schedule": "not a dict"  # Invalid schedule type
+            }
+        ]
     }

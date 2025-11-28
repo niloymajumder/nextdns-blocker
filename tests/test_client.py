@@ -236,8 +236,8 @@ class TestRequestRetry:
 
     @responses.activate
     def test_max_retries_exceeded(self, client):
-        # All calls timeout
-        for _ in range(3):
+        # All calls timeout (1 original + 3 retries = 4 total)
+        for _ in range(4):
             responses.add(
                 responses.GET,
                 f"{API_URL}/profiles/test_profile/denylist",
@@ -245,7 +245,7 @@ class TestRequestRetry:
             )
         result = client.get_denylist()
         assert result is None
-        assert len(responses.calls) == 3
+        assert len(responses.calls) == 4
 
 
 class TestHeaders:
@@ -272,3 +272,174 @@ class TestHeaders:
         )
         client.get_denylist()
         assert responses.calls[0].request.headers["Content-Type"] == "application/json"
+
+
+class TestDenylistCache:
+    """Tests for denylist caching functionality."""
+
+    @responses.activate
+    def test_cache_hit(self, client, mock_denylist):
+        """Second call should use cache, not make API request."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json=mock_denylist,
+            status=200
+        )
+        # First call populates cache
+        result1 = client.get_denylist()
+        assert result1 == mock_denylist["data"]
+        assert len(responses.calls) == 1
+
+        # Second call should use cache
+        result2 = client.get_denylist()
+        assert result2 == mock_denylist["data"]
+        assert len(responses.calls) == 1  # No new API call
+
+    @responses.activate
+    def test_cache_bypass(self, client, mock_denylist):
+        """use_cache=False should bypass cache."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json=mock_denylist,
+            status=200
+        )
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json=mock_denylist,
+            status=200
+        )
+        # First call populates cache
+        client.get_denylist()
+        assert len(responses.calls) == 1
+
+        # Second call with use_cache=False should make API request
+        client.get_denylist(use_cache=False)
+        assert len(responses.calls) == 2
+
+    @responses.activate
+    def test_find_domain_uses_cache(self, client, mock_denylist):
+        """find_domain should use cache for subsequent calls."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json=mock_denylist,
+            status=200
+        )
+        # First call populates cache
+        result1 = client.find_domain("example.com")
+        assert result1 == "example.com"
+        assert len(responses.calls) == 1
+
+        # Second call should use cache
+        result2 = client.find_domain("blocked.com")
+        assert result2 == "blocked.com"
+        assert len(responses.calls) == 1  # No new API call
+
+    @responses.activate
+    def test_refresh_cache(self, client, mock_denylist):
+        """refresh_cache should invalidate and refetch."""
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json=mock_denylist,
+            status=200
+        )
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": []},
+            status=200
+        )
+        # First call
+        client.get_denylist()
+        assert len(responses.calls) == 1
+
+        # Refresh should make new API call
+        client.refresh_cache()
+        assert len(responses.calls) == 2
+
+
+class TestIsBlocked:
+    """Tests for is_blocked convenience method."""
+
+    @responses.activate
+    def test_is_blocked_true(self, client, mock_denylist):
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json=mock_denylist,
+            status=200
+        )
+        assert client.is_blocked("example.com") is True
+
+    @responses.activate
+    def test_is_blocked_false(self, client, mock_denylist):
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json=mock_denylist,
+            status=200
+        )
+        assert client.is_blocked("notblocked.com") is False
+
+
+class TestOptimisticCacheUpdates:
+    """Tests for optimistic cache updates after block/unblock."""
+
+    @responses.activate
+    def test_block_updates_cache(self, client):
+        """After blocking, cache should contain the domain."""
+        # Initial denylist
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": []},
+            status=200
+        )
+        # Block request
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"id": "newdomain.com"},
+            status=200
+        )
+
+        # Verify not blocked initially
+        assert client.find_domain("newdomain.com") is None
+
+        # Block the domain
+        client.block("newdomain.com")
+
+        # Cache should now contain the domain (no new API call needed)
+        # The cache contains() check uses the optimistically updated set
+        assert client._cache.contains("newdomain.com") is True
+
+    @responses.activate
+    def test_unblock_updates_cache(self, client, mock_denylist):
+        """After unblocking, cache should not contain the domain."""
+        # Initial denylist
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json=mock_denylist,
+            status=200
+        )
+        # Unblock request
+        responses.add(
+            responses.DELETE,
+            f"{API_URL}/profiles/test_profile/denylist/example.com",
+            json={},
+            status=200
+        )
+
+        # Verify blocked initially
+        assert client.find_domain("example.com") == "example.com"
+
+        # Unblock the domain
+        client.unblock("example.com")
+
+        # Cache should no longer contain the domain
+        assert client._cache.contains("example.com") is False
