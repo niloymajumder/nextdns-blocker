@@ -53,14 +53,22 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
     echo "  error: .env not found"
     exit 1
 fi
-if [ ! -f "$INSTALL_DIR/domains.json" ]; then
-    echo "  error: domains.json not found"
+
+# Check for domains.json OR DOMAINS_URL
+source "$INSTALL_DIR/.env"
+if [ ! -f "$INSTALL_DIR/domains.json" ] && [ -z "$DOMAINS_URL" ]; then
+    echo "  error: domains.json not found and DOMAINS_URL not set"
+    echo "         provide either a local domains.json or set DOMAINS_URL in .env"
     exit 1
+fi
+if [ -n "$DOMAINS_URL" ]; then
+    echo "         using remote: $DOMAINS_URL"
+elif [ -f "$INSTALL_DIR/domains.json" ]; then
+    echo "         using local: domains.json"
 fi
 
 # Validate API credentials
 echo "  [7/10] validating API"
-source "$INSTALL_DIR/.env"
 if [ -z "$NEXTDNS_API_KEY" ] || [ -z "$NEXTDNS_PROFILE_ID" ]; then
     echo "  error: NEXTDNS_API_KEY or NEXTDNS_PROFILE_ID not set in .env"
     exit 1

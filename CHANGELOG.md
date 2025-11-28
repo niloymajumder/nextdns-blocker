@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2024-11-27
+
+### Fixed
+- **install.sh**: Now supports DOMAINS_URL without requiring local domains.json
+  - Installation no longer fails when using remote configuration
+  - Displays "using remote: URL" or "using local: domains.json" during install
+  - Provides clear error message when neither local file nor URL is configured
+
+### Added
+- Test suite for install.sh domain configuration logic (6 tests)
+
 ## [3.0.0] - 2024-11-27
 
 ### Added
@@ -102,6 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[3.0.1]: https://github.com/aristeoibarra/nextdns-blocker/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v1.0.0...v2.0.0
