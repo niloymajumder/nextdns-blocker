@@ -122,11 +122,12 @@ class TestLoadDomains:
         with open(json_file, 'w') as f:
             json.dump(domains_json_content, f)
 
-        domains = load_domains(str(temp_dir))
+        domains, allowlist = load_domains(str(temp_dir))
 
         assert len(domains) == 2
         assert domains[0]['domain'] == 'example.com'
         assert domains[1]['domain'] == 'blocked.com'
+        assert allowlist == []  # No allowlist in default fixture
 
     def test_load_domains_file_not_found(self, temp_dir):
         """Test that missing domains.json raises ConfigurationError."""
@@ -190,10 +191,11 @@ class TestLoadDomains:
             status=200
         )
 
-        domains = load_domains("/tmp", domains_url=test_url)
+        domains, allowlist = load_domains("/tmp", domains_url=test_url)
 
         assert len(domains) == 2
         assert domains[0]['domain'] == 'example.com'
+        assert allowlist == []
 
     @responses.activate
     def test_load_domains_url_error(self):
@@ -261,8 +263,9 @@ class TestDomainConfigValidation:
         with open(json_file, 'w') as f:
             json.dump(valid_config, f)
 
-        domains = load_domains(str(temp_dir))
+        domains, allowlist = load_domains(str(temp_dir))
         assert len(domains) == 2
+        assert allowlist == []
 
 
 class TestParseEnvValue:

@@ -404,7 +404,83 @@ def validate_domain_config(config: Dict[str, Any], index: int) -> List[str]:
     return errors
 
 
-def load_domains(script_dir: str, domains_url: Optional[str] = None) -> List[Dict[str, Any]]:
+def validate_allowlist_config(config: Dict[str, Any], index: int) -> List[str]:
+    """
+    Validate a single allowlist configuration entry.
+
+    Args:
+        config: Allowlist configuration dictionary
+        index: Index in the allowlist array (for error messages)
+
+    Returns:
+        List of error messages (empty if valid)
+    """
+    errors: List[str] = []
+
+    # Check domain field exists and is valid
+    if 'domain' not in config:
+        return [f"allowlist #{index}: Missing 'domain' field"]
+
+    domain = config['domain']
+    if not domain or not isinstance(domain, str) or not domain.strip():
+        return [f"allowlist #{index}: Empty or invalid domain"]
+
+    domain = domain.strip()
+    if not validate_domain(domain):
+        return [f"allowlist #{index}: Invalid domain format '{domain}'"]
+
+    # Allowlist should NOT have schedule (it's always 24/7)
+    if 'schedule' in config and config['schedule'] is not None:
+        errors.append(
+            f"allowlist '{domain}': 'schedule' field not allowed "
+            f"(allowlist is always 24/7)"
+        )
+
+    return errors
+
+
+def validate_no_overlap(
+    domains: List[Dict[str, Any]],
+    allowlist: List[Dict[str, Any]]
+) -> List[str]:
+    """
+    Validate that no domain appears in both denylist and allowlist.
+
+    Args:
+        domains: List of denylist domain configurations
+        allowlist: List of allowlist domain configurations
+
+    Returns:
+        List of error messages (empty if no conflicts)
+    """
+    errors: List[str] = []
+
+    denylist_domains = {
+        d['domain'].strip().lower()
+        for d in domains
+        if 'domain' in d and isinstance(d['domain'], str)
+    }
+    allowlist_domains = {
+        a['domain'].strip().lower()
+        for a in allowlist
+        if 'domain' in a and isinstance(a['domain'], str)
+    }
+
+    overlap = denylist_domains & allowlist_domains
+
+    for domain in sorted(overlap):
+        errors.append(
+            f"Domain '{domain}' appears in both 'domains' (denylist) and 'allowlist'. "
+            f"A domain cannot be blocked and allowed simultaneously."
+        )
+
+    return errors
+
+
+def load_domains(
+    script_dir: str,
+    domains_url: Optional[str] = None
+) -> tuple:
     """
     Load domain configurations from URL or local file.
 
@@ -413,7 +489,7 @@ def load_domains(script_dir: str, domains_url: Optional[str] = None) -> List[Dic
         domains_url: Optional URL to fetch domains from
 
     Returns:
-        List of validated domain configurations
+        Tuple of (denylist domains, allowlist domains)
 
     Raises:
         ConfigurationError: If loading or validation fails
@@ -450,17 +526,27 @@ def load_domains(script_dir: str, domains_url: Optional[str] = None) -> List[Dic
     if not domains:
         raise ConfigurationError("No domains configured")
 
-    # Validate each domain
+    # Load allowlist (optional, defaults to empty)
+    allowlist = config.get('allowlist', [])
+
+    # Validate each domain in denylist
     all_errors: List[str] = []
     for idx, domain_config in enumerate(domains):
         all_errors.extend(validate_domain_config(domain_config, idx))
+
+    # Validate each domain in allowlist
+    for idx, allowlist_config in enumerate(allowlist):
+        all_errors.extend(validate_allowlist_config(allowlist_config, idx))
+
+    # Validate no overlap between denylist and allowlist
+    all_errors.extend(validate_no_overlap(domains, allowlist))
 
     if all_errors:
         for error in all_errors:
             logger.error(error)
         raise ConfigurationError(f"Domain validation failed: {len(all_errors)} error(s)")
 
-    return domains
+    return domains, allowlist
 
 
 def load_config() -> Dict[str, Any]:
@@ -648,6 +734,67 @@ class DenylistCache:
         self._domains.discard(domain)
 
 
+class AllowlistCache:
+    """Cache for allowlist to reduce API calls."""
+
+    def __init__(self, ttl: int = CACHE_TTL) -> None:
+        """
+        Initialize the cache.
+
+        Args:
+            ttl: Time to live in seconds
+        """
+        self.ttl = ttl
+        self._data: Optional[List[Dict[str, Any]]] = None
+        self._domains: Set[str] = set()
+        self._timestamp: float = 0
+
+    def is_valid(self) -> bool:
+        """Check if cache is still valid."""
+        return (
+            self._data is not None and
+            (datetime.now().timestamp() - self._timestamp) < self.ttl
+        )
+
+    def get(self) -> Optional[List[Dict[str, Any]]]:
+        """Get cached allowlist if valid."""
+        if self.is_valid():
+            return self._data
+        return None
+
+    def set(self, data: List[Dict[str, Any]]) -> None:
+        """Update cache with new data."""
+        self._data = data
+        self._domains = {entry.get("id", "") for entry in data}
+        self._timestamp = datetime.now().timestamp()
+
+    def contains(self, domain: str) -> Optional[bool]:
+        """
+        Check if domain is in cached allowlist.
+
+        Returns:
+            True/False if cache is valid, None if cache is invalid
+        """
+        if not self.is_valid():
+            return None
+        return domain in self._domains
+
+    def invalidate(self) -> None:
+        """Invalidate the cache."""
+        self._data = None
+        self._domains = set()
+        self._timestamp = 0
+
+    def add_domain(self, domain: str) -> None:
+        """Add a domain to the cache (for optimistic updates)."""
+        if self._data is not None:
+            self._domains.add(domain)
+
+    def remove_domain(self, domain: str) -> None:
+        """Remove a domain from the cache (for optimistic updates)."""
+        self._domains.discard(domain)
+
+
 class NextDNSClient:
     """Client for interacting with the NextDNS API with caching and rate limiting."""
 
@@ -676,6 +823,7 @@ class NextDNSClient:
         }
         self._rate_limiter = RateLimiter()
         self._cache = DenylistCache()
+        self._allowlist_cache = AllowlistCache()
 
     def _calculate_backoff(self, attempt: int) -> float:
         """
@@ -928,6 +1076,151 @@ class NextDNSClient:
         self._cache.invalidate()
         return self.get_denylist(use_cache=False) is not None
 
+    # -------------------------------------------------------------------------
+    # ALLOWLIST METHODS
+    # -------------------------------------------------------------------------
+
+    def get_allowlist(self, use_cache: bool = True) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch the current allowlist from NextDNS.
+
+        Args:
+            use_cache: Whether to use cached data if available
+
+        Returns:
+            List of allowed domains, or None if request failed
+        """
+        if use_cache:
+            cached = self._allowlist_cache.get()
+            if cached is not None:
+                logger.debug("Using cached allowlist")
+                return cached
+
+        result = self.request("GET", f"/profiles/{self.profile_id}/allowlist")
+        if result is None:
+            logger.warning("Failed to fetch allowlist from API")
+            return None
+
+        data = result.get("data", [])
+        self._allowlist_cache.set(data)
+        return data
+
+    def find_in_allowlist(
+        self, domain: str, use_cache: bool = True
+    ) -> Optional[str]:
+        """
+        Find a domain in the allowlist.
+
+        Args:
+            domain: Domain name to find
+            use_cache: Whether to use cached data if available
+
+        Returns:
+            Domain name if found, None otherwise
+        """
+        if use_cache:
+            cached_result = self._allowlist_cache.contains(domain)
+            if cached_result is not None:
+                return domain if cached_result else None
+
+        allowlist = self.get_allowlist(use_cache=use_cache)
+        if allowlist is None:
+            return None
+
+        for entry in allowlist:
+            if entry.get("id") == domain:
+                return domain
+        return None
+
+    def is_allowed(self, domain: str) -> bool:
+        """
+        Check if a domain is currently in the allowlist.
+
+        Args:
+            domain: Domain name to check
+
+        Returns:
+            True if in allowlist, False otherwise
+        """
+        return self.find_in_allowlist(domain) is not None
+
+    def allow(self, domain: str) -> bool:
+        """
+        Add a domain to the allowlist.
+
+        Args:
+            domain: Domain name to allow
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            DomainValidationError: If domain is invalid
+        """
+        if not validate_domain(domain):
+            raise DomainValidationError(f"Invalid domain: {domain}")
+
+        if self.find_in_allowlist(domain):
+            logger.debug(f"Domain already in allowlist: {domain}")
+            return True
+
+        result = self.request(
+            "POST",
+            f"/profiles/{self.profile_id}/allowlist",
+            {"id": domain, "active": True}
+        )
+
+        if result is not None:
+            self._allowlist_cache.add_domain(domain)
+            logger.info(f"Added to allowlist: {domain}")
+            return True
+
+        logger.error(f"Failed to add to allowlist: {domain}")
+        return False
+
+    def disallow(self, domain: str) -> bool:
+        """
+        Remove a domain from the allowlist.
+
+        Args:
+            domain: Domain name to remove from allowlist
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            DomainValidationError: If domain is invalid
+        """
+        if not validate_domain(domain):
+            raise DomainValidationError(f"Invalid domain: {domain}")
+
+        if not self.find_in_allowlist(domain):
+            logger.debug(f"Domain not in allowlist: {domain}")
+            return True
+
+        result = self.request(
+            "DELETE",
+            f"/profiles/{self.profile_id}/allowlist/{domain}"
+        )
+
+        if result is not None:
+            self._allowlist_cache.remove_domain(domain)
+            logger.info(f"Removed from allowlist: {domain}")
+            return True
+
+        logger.error(f"Failed to remove from allowlist: {domain}")
+        return False
+
+    def refresh_allowlist_cache(self) -> bool:
+        """
+        Force refresh the allowlist cache.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        self._allowlist_cache.invalidate()
+        return self.get_allowlist(use_cache=False) is not None
+
 
 # =============================================================================
 # SCHEDULE EVALUATOR
@@ -1138,6 +1431,7 @@ def cmd_unblock(
 def cmd_sync(
     client: NextDNSClient,
     domains: List[Dict[str, Any]],
+    allowlist: List[Dict[str, Any]],
     protected_domains: List[str],
     timezone: str,
     dry_run: bool = False,
@@ -1148,7 +1442,8 @@ def cmd_sync(
 
     Args:
         client: NextDNS API client
-        domains: List of domain configurations
+        domains: List of denylist domain configurations
+        allowlist: List of allowlist domain configurations
         protected_domains: List of protected domain names
         timezone: Timezone for schedule evaluation
         dry_run: If True, only show what would be done without making changes
@@ -1182,6 +1477,41 @@ def cmd_sync(
     blocked_count = 0
     unblocked_count = 0
     unchanged_count = 0
+    allowed_count = 0
+
+    # === SYNC ALLOWLIST FIRST (so exceptions are active before blocking) ===
+    if allowlist:
+        if dry_run:
+            print("  --- Allowlist ---")
+
+        for allowlist_config in allowlist:
+            domain = allowlist_config['domain']
+            is_allowed = client.find_in_allowlist(domain) is not None
+
+            if not is_allowed:
+                if dry_run:
+                    print(f"  [WOULD ALLOW] {domain}")
+                    allowed_count += 1
+                else:
+                    try:
+                        if client.allow(domain):
+                            allowed_count += 1
+                            audit_log("ALLOW", domain)
+                            if verbose:
+                                print(f"  [ALLOWED] {domain}")
+                    except DomainValidationError as e:
+                        logger.error(f"Invalid allowlist domain: {e}")
+            elif verbose or dry_run:
+                if dry_run:
+                    print(f"  [OK] {domain} (already in allowlist)")
+                unchanged_count += 1
+
+        if dry_run:
+            print()
+
+    # === SYNC DENYLIST ===
+    if dry_run and domains:
+        print("  --- Denylist ---")
 
     # Protected domains - always ensure they're blocked
     for protected in protected_domains:
@@ -1249,24 +1579,32 @@ def cmd_sync(
     # Summary
     if dry_run:
         print(f"\n  Summary (DRY RUN):")
+        if allowlist:
+            print(f"    Would allow:   {allowed_count}")
         print(f"    Would block:   {blocked_count}")
         print(f"    Would unblock: {unblocked_count}")
         print(f"    Unchanged:     {unchanged_count}")
         print()
     elif verbose:
         print(f"\n  Summary:")
+        if allowlist:
+            print(f"    Allowed:   {allowed_count}")
         print(f"    Blocked:   {blocked_count}")
         print(f"    Unblocked: {unblocked_count}")
         print(f"    Unchanged: {unchanged_count}")
         print()
 
-    logger.info(f"Sync complete: {blocked_count} blocked, {unblocked_count} unblocked")
+    logger.info(
+        f"Sync complete: {allowed_count} allowed, "
+        f"{blocked_count} blocked, {unblocked_count} unblocked"
+    )
     return 0
 
 
 def cmd_status(
     client: NextDNSClient,
     domains: List[Dict[str, Any]],
+    allowlist: List[Dict[str, Any]],
     protected_domains: List[str]
 ) -> int:
     """
@@ -1274,7 +1612,8 @@ def cmd_status(
 
     Args:
         client: NextDNS API client
-        domains: List of domain configurations
+        domains: List of denylist domain configurations
+        allowlist: List of allowlist domain configurations
         protected_domains: List of protected domain names
 
     Returns:
@@ -1284,9 +1623,19 @@ def cmd_status(
     if pause_remaining:
         print(f"\n  PAUSED ({pause_remaining} remaining)")
 
+    # Show allowlist first
+    if allowlist:
+        print("\n  allowlist (always accessible)")
+        print("  ------------------------------")
+        for allowlist_config in allowlist:
+            domain = allowlist_config['domain']
+            is_allowed = client.find_in_allowlist(domain) is not None
+            status = "active" if is_allowed else "WARNING: not in allowlist"
+            print(f"    {domain:<30} {status}")
+
     if protected_domains:
-        print("\n  protected")
-        print("  ---------")
+        print("\n  protected (always blocked)")
+        print("  --------------------------")
         for protected in protected_domains:
             status = "blocked" if client.find_domain(protected) else "WARNING: not blocked"
             print(f"    {protected:<30} {status}")
@@ -1302,6 +1651,77 @@ def cmd_status(
     print()
 
     return 0
+
+
+def cmd_allow(
+    target: str,
+    client: NextDNSClient,
+    denylist_domains: List[str]
+) -> int:
+    """
+    Handle the 'allow' command - add domain to allowlist.
+
+    Args:
+        target: Domain to add to allowlist
+        client: NextDNS API client
+        denylist_domains: List of domains in denylist (for conflict warning)
+
+    Returns:
+        Exit code (0 for success, 1 for failure)
+    """
+    target = target.lower().strip()
+
+    if not validate_domain(target):
+        print(f"\n  Invalid domain: {target}\n")
+        return 1
+
+    # Warn if domain is also in denylist config
+    if target in denylist_domains:
+        print(f"\n  Warning: '{target}' is also in your domains.json denylist.")
+        print("  The allowlist will take precedence for this exact domain,")
+        print("  but consider removing it from one list to avoid confusion.\n")
+
+    try:
+        if client.allow(target):
+            audit_log("MANUAL_ALLOW", target)
+            print(f"\n  Added to allowlist: {target}\n")
+            return 0
+        else:
+            print(f"\n  Failed to add to allowlist: {target}\n")
+            return 1
+    except DomainValidationError as e:
+        print(f"\n  Error: {e}\n")
+        return 1
+
+
+def cmd_disallow(target: str, client: NextDNSClient) -> int:
+    """
+    Handle the 'disallow' command - remove domain from allowlist.
+
+    Args:
+        target: Domain to remove from allowlist
+        client: NextDNS API client
+
+    Returns:
+        Exit code (0 for success, 1 for failure)
+    """
+    target = target.lower().strip()
+
+    if not validate_domain(target):
+        print(f"\n  Invalid domain: {target}\n")
+        return 1
+
+    try:
+        if client.disallow(target):
+            audit_log("MANUAL_DISALLOW", target)
+            print(f"\n  Removed from allowlist: {target}\n")
+            return 0
+        else:
+            print(f"\n  Failed to remove from allowlist: {target}\n")
+            return 1
+    except DomainValidationError as e:
+        print(f"\n  Error: {e}\n")
+        return 1
 
 
 def cmd_health(client: NextDNSClient, config: Dict[str, Any]) -> int:
@@ -1461,14 +1881,17 @@ def print_usage() -> None:
     print("  health            - Perform health checks")
     print("  stats             - Show usage statistics")
     print("  unblock <domain>  - Manually unblock a domain")
+    print("  allow <domain>    - Add domain to allowlist (always accessible)")
+    print("  disallow <domain> - Remove domain from allowlist")
     print("  pause [minutes]   - Pause all blocking (default: 30 min)")
     print("  resume            - Resume blocking immediately")
     print()
     print("Examples:")
-    print("  ./blocker.bin sync --dry-run    # Preview sync changes")
-    print("  ./blocker.bin sync -v           # Sync with verbose output")
-    print("  ./blocker.bin health            # Check system health")
-    print("  ./blocker.bin pause 60          # Pause for 60 minutes")
+    print("  ./blocker sync --dry-run        # Preview sync changes")
+    print("  ./blocker sync -v               # Sync with verbose output")
+    print("  ./blocker allow aws.amazon.com  # Always allow AWS")
+    print("  ./blocker health                # Check system health")
+    print("  ./blocker pause 60              # Pause for 60 minutes")
     print()
 
 
@@ -1512,7 +1935,7 @@ def main() -> int:
         return 1
 
     try:
-        domains = load_domains(config['script_dir'], config.get('domains_url'))
+        domains, allowlist = load_domains(config['script_dir'], config.get('domains_url'))
     except ConfigurationError as e:
         logger.error(str(e))
         print(f"\n  Configuration error: {e}\n")
@@ -1525,6 +1948,7 @@ def main() -> int:
         retries=config['retries']
     )
     protected_domains = get_protected_domains(domains)
+    denylist_domains = [d['domain'] for d in domains]
 
     if action == "unblock":
         if len(sys.argv) < 3:
@@ -1532,17 +1956,29 @@ def main() -> int:
             return 1
         return cmd_unblock(sys.argv[2], client, protected_domains)
 
+    if action == "allow":
+        if len(sys.argv) < 3:
+            print("\n  Usage: allow <domain>\n")
+            return 1
+        return cmd_allow(sys.argv[2], client, denylist_domains)
+
+    if action == "disallow":
+        if len(sys.argv) < 3:
+            print("\n  Usage: disallow <domain>\n")
+            return 1
+        return cmd_disallow(sys.argv[2], client)
+
     if action == "sync":
         # Parse sync options
         dry_run = "--dry-run" in sys.argv
         verbose = "--verbose" in sys.argv or "-v" in sys.argv
         return cmd_sync(
-            client, domains, protected_domains, config['timezone'],
+            client, domains, allowlist, protected_domains, config['timezone'],
             dry_run=dry_run, verbose=verbose
         )
 
     if action == "status":
-        return cmd_status(client, domains, protected_domains)
+        return cmd_status(client, domains, allowlist, protected_domains)
 
     if action == "health":
         return cmd_health(client, config)

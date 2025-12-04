@@ -209,13 +209,13 @@ class TestCmdSync:
         future_time = datetime.now() + timedelta(minutes=30)
         mock_pause_file.write_text(future_time.isoformat())
 
-        result = cmd_sync(mock_client, [], [], "UTC")
+        result = cmd_sync(mock_client, [], [], [], "UTC")
         assert result == 0
         mock_client.block.assert_not_called()
 
     def test_cmd_sync_invalid_timezone(self, mock_pause_file, mock_client, capsys):
         """Test sync fails with invalid timezone."""
-        result = cmd_sync(mock_client, [], [], "Invalid/Timezone")
+        result = cmd_sync(mock_client, [], [], [], "Invalid/Timezone")
         assert result == 1
         captured = capsys.readouterr()
         assert "Invalid timezone" in captured.out
@@ -241,7 +241,7 @@ class TestCmdSync:
 
         domains = [{"domain": "block-me.com", "schedule": None}]
 
-        result = cmd_sync(client, domains, [], "UTC")
+        result = cmd_sync(client, domains, [], [], "UTC")
         assert result == 0
 
 
@@ -262,7 +262,7 @@ class TestCmdStatus:
 
         domains = [{"domain": "example.com", "schedule": None}]
 
-        result = cmd_status(client, domains, [])
+        result = cmd_status(client, domains, [], [])
         assert result == 0
         captured = capsys.readouterr()
         assert "blocked" in captured.out
@@ -274,7 +274,7 @@ class TestCmdStatus:
 
         mock_client.find_domain.return_value = None
 
-        result = cmd_status(mock_client, [], [])
+        result = cmd_status(mock_client, [], [], [])
         assert result == 0
         captured = capsys.readouterr()
         assert "PAUSED" in captured.out
@@ -285,7 +285,7 @@ class TestCmdStatus:
 
         domains = [{"domain": "protected.com", "protected": True}]
 
-        result = cmd_status(mock_client, domains, ["protected.com"])
+        result = cmd_status(mock_client, domains, [], ["protected.com"])
         assert result == 0
         captured = capsys.readouterr()
         assert "protected" in captured.out
@@ -377,7 +377,7 @@ class TestMain:
                             'timezone': 'UTC',
                             'script_dir': '/tmp'
                         }
-                        mock_domains.return_value = []
+                        mock_domains.return_value = ([], [])
                         result = main()
         assert result == 1
         captured = capsys.readouterr()
@@ -427,7 +427,7 @@ class TestMain:
                         'timezone': 'UTC',
                         'script_dir': '/tmp'
                     }
-                    mock_domains.return_value = []
+                    mock_domains.return_value = ([], [])
                     result = main()
         assert result == 1
         captured = capsys.readouterr()
@@ -554,7 +554,7 @@ class TestCmdSyncDryRun:
 
         domains = [{"domain": "block-me.com", "schedule": None}]
 
-        result = cmd_sync(client, domains, [], "UTC", dry_run=True)
+        result = cmd_sync(client, domains, [], [], "UTC", dry_run=True)
         assert result == 0
         captured = capsys.readouterr()
         assert "DRY RUN MODE" in captured.out
@@ -588,7 +588,7 @@ class TestCmdSyncDryRun:
 
         # Freeze time to Wednesday at noon UTC
         with freeze_time("2025-11-26 12:00:00"):
-            result = cmd_sync(client, domains, [], "UTC", dry_run=True)
+            result = cmd_sync(client, domains, [], [], "UTC", dry_run=True)
 
         assert result == 0
         captured = capsys.readouterr()
@@ -610,7 +610,7 @@ class TestCmdSyncDryRun:
 
         domains = [{"domain": "block-me.com", "schedule": None}]
 
-        cmd_sync(client, domains, [], "UTC", dry_run=True)
+        cmd_sync(client, domains, [], [], "UTC", dry_run=True)
 
         # Only GET request should have been made, no POST
         assert len(responses.calls) == 1
@@ -630,7 +630,7 @@ class TestCmdSyncDryRun:
 
         domains = [{"domain": "block-me.com", "schedule": None}]
 
-        cmd_sync(client, domains, [], "UTC", dry_run=True)
+        cmd_sync(client, domains, [], [], "UTC", dry_run=True)
         captured = capsys.readouterr()
         assert "Summary (DRY RUN)" in captured.out
 
@@ -658,7 +658,7 @@ class TestCmdSyncVerbose:
 
         domains = [{"domain": "block-me.com", "schedule": None}]
 
-        result = cmd_sync(client, domains, [], "UTC", verbose=True)
+        result = cmd_sync(client, domains, [], [], "UTC", verbose=True)
         assert result == 0
         captured = capsys.readouterr()
         assert "[BLOCKED]" in captured.out
@@ -677,7 +677,7 @@ class TestCmdSyncVerbose:
 
         domains = [{"domain": "already-blocked.com", "schedule": None}]
 
-        cmd_sync(client, domains, [], "UTC", verbose=True)
+        cmd_sync(client, domains, [], [], "UTC", verbose=True)
         captured = capsys.readouterr()
         assert "Summary:" in captured.out
         assert "Unchanged:" in captured.out
@@ -713,7 +713,7 @@ class TestCmdSyncVerbose:
         }]
 
         with freeze_time("2025-11-26 12:00:00"):
-            result = cmd_sync(client, domains, [], "UTC", verbose=True)
+            result = cmd_sync(client, domains, [], [], "UTC", verbose=True)
 
         assert result == 0
         captured = capsys.readouterr()
@@ -741,7 +741,7 @@ class TestCmdSyncVerbose:
         protected = ["protected.com"]
 
         with patch('nextdns_blocker.audit_log'):
-            result = cmd_sync(client, domains, protected, "UTC", verbose=True)
+            result = cmd_sync(client, domains, [], protected, "UTC", verbose=True)
 
         assert result == 0
         captured = capsys.readouterr()
@@ -756,7 +756,7 @@ class TestCmdSyncVerbose:
         future_time = datetime.now() + timedelta(minutes=15)
         mock_pause_file.write_text(future_time.isoformat())
 
-        result = cmd_sync(client, [], [], "UTC", verbose=True)
+        result = cmd_sync(client, [], [], [], "UTC", verbose=True)
         assert result == 0
         captured = capsys.readouterr()
         assert "paused" in captured.out.lower()
@@ -780,7 +780,7 @@ class TestCmdSyncProtectedDomains:
         domains = [{"domain": "protected.com", "protected": True, "schedule": None}]
         protected = ["protected.com"]
 
-        result = cmd_sync(client, domains, protected, "UTC", dry_run=True)
+        result = cmd_sync(client, domains, [], protected, "UTC", dry_run=True)
         assert result == 0
         captured = capsys.readouterr()
         assert "WOULD BLOCK" in captured.out
@@ -801,7 +801,7 @@ class TestCmdSyncProtectedDomains:
         domains = [{"domain": "protected.com", "protected": True, "schedule": None}]
         protected = ["protected.com"]
 
-        result = cmd_sync(client, domains, protected, "UTC", dry_run=True)
+        result = cmd_sync(client, domains, [], protected, "UTC", dry_run=True)
         assert result == 0
         captured = capsys.readouterr()
         assert "[OK]" in captured.out
@@ -832,7 +832,7 @@ class TestMainWithSyncOptions:
                         'timezone': 'UTC',
                         'script_dir': '/tmp'
                     }
-                    mock_domains.return_value = [{"domain": "test.com", "schedule": None}]
+                    mock_domains.return_value = ([{"domain": "test.com", "schedule": None}], [])
                     result = main()
 
         assert result == 0
@@ -860,7 +860,7 @@ class TestMainWithSyncOptions:
                         'timezone': 'UTC',
                         'script_dir': '/tmp'
                     }
-                    mock_domains.return_value = [{"domain": "test.com", "schedule": None}]
+                    mock_domains.return_value = ([{"domain": "test.com", "schedule": None}], [])
                     result = main()
 
         assert result == 0
@@ -1069,7 +1069,7 @@ class TestMainHealthAndStats:
                             'timezone': 'UTC',
                             'script_dir': '/tmp'
                         }
-                        mock_domains.return_value = []
+                        mock_domains.return_value = ([], [])
                         result = main()
 
         assert result == 0
@@ -1090,7 +1090,7 @@ class TestMainHealthAndStats:
                             'timezone': 'UTC',
                             'script_dir': '/tmp'
                         }
-                        mock_domains.return_value = []
+                        mock_domains.return_value = ([], [])
                         result = main()
 
         assert result == 0

@@ -200,6 +200,52 @@ Changes take effect on next sync (every 2 minutes).
 
 See [SCHEDULE_GUIDE.md](SCHEDULE_GUIDE.md) for complete documentation and examples.
 
+### Allowlist (Exceptions)
+
+Use the `allowlist` to keep specific subdomains accessible even when their parent domain is blocked:
+
+```json
+{
+  "domains": [
+    {
+      "domain": "amazon.com",
+      "description": "E-commerce - blocked with schedule",
+      "schedule": { ... }
+    }
+  ],
+  "allowlist": [
+    {
+      "domain": "aws.amazon.com",
+      "description": "AWS Console - always accessible"
+    },
+    {
+      "domain": "developer.amazon.com",
+      "description": "Amazon Developer - always accessible"
+    }
+  ]
+}
+```
+
+#### Allowlist Behavior
+
+- Allowlist entries are **always active 24/7** (no schedule support)
+- A domain cannot be in both `domains` (denylist) and `allowlist`
+- Use for subdomain exceptions: block `amazon.com` but allow `aws.amazon.com`
+- Changes sync automatically every 2 minutes
+
+#### Allowlist Commands
+
+```bash
+# Add domain to allowlist (always accessible)
+./blocker allow aws.amazon.com
+
+# Remove domain from allowlist
+./blocker disallow aws.amazon.com
+
+# View current status including allowlist
+./blocker status
+```
+
 ### Timezone
 
 Edit `.env` to change timezone:

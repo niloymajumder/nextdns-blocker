@@ -1,0 +1,603 @@
+"""Tests for allowlist functionality."""
+
+import pytest
+import responses
+from unittest.mock import patch, MagicMock
+from datetime import datetime
+
+from nextdns_blocker import (
+    NextDNSClient,
+    API_URL,
+    AllowlistCache,
+    validate_allowlist_config,
+    validate_no_overlap,
+    cmd_allow,
+    cmd_disallow,
+    cmd_sync,
+    cmd_status,
+    load_domains,
+    DomainValidationError,
+    ConfigurationError,
+    CACHE_TTL,
+)
+
+
+class TestAllowlistCache:
+    """Tests for AllowlistCache class."""
+
+    def test_cache_init_empty(self):
+        """Test cache initializes empty."""
+        cache = AllowlistCache()
+        assert cache.get() is None
+        assert not cache.is_valid()
+
+    def test_cache_set_and_get(self):
+        """Test setting and getting cache data."""
+        cache = AllowlistCache()
+        data = [{"id": "aws.amazon.com", "active": True}]
+        cache.set(data)
+        assert cache.get() == data
+        assert cache.is_valid()
+
+    def test_cache_contains(self):
+        """Test contains method."""
+        cache = AllowlistCache()
+        data = [{"id": "aws.amazon.com", "active": True}]
+        cache.set(data)
+        assert cache.contains("aws.amazon.com") is True
+        assert cache.contains("unknown.com") is False
+
+    def test_cache_contains_invalid(self):
+        """Test contains returns None when cache invalid."""
+        cache = AllowlistCache()
+        assert cache.contains("aws.amazon.com") is None
+
+    def test_cache_add_domain(self):
+        """Test adding domain to cache."""
+        cache = AllowlistCache()
+        cache.set([])
+        cache.add_domain("new.domain.com")
+        assert cache.contains("new.domain.com") is True
+
+    def test_cache_remove_domain(self):
+        """Test removing domain from cache."""
+        cache = AllowlistCache()
+        cache.set([{"id": "aws.amazon.com", "active": True}])
+        cache.remove_domain("aws.amazon.com")
+        assert cache.contains("aws.amazon.com") is False
+
+    def test_cache_invalidate(self):
+        """Test cache invalidation."""
+        cache = AllowlistCache()
+        cache.set([{"id": "aws.amazon.com", "active": True}])
+        cache.invalidate()
+        assert cache.get() is None
+        assert not cache.is_valid()
+
+
+class TestGetAllowlist:
+    """Tests for NextDNSClient.get_allowlist method."""
+
+    @responses.activate
+    def test_get_allowlist_success(self):
+        """Test successful allowlist fetch."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": [{"id": "aws.amazon.com", "active": True}]},
+            status=200
+        )
+
+        result = client.get_allowlist()
+        assert result == [{"id": "aws.amazon.com", "active": True}]
+
+    @responses.activate
+    def test_get_allowlist_empty(self):
+        """Test empty allowlist fetch."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": []},
+            status=200
+        )
+
+        result = client.get_allowlist()
+        assert result == []
+
+    @responses.activate
+    def test_get_allowlist_uses_cache(self):
+        """Test that second call uses cache."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": [{"id": "aws.amazon.com", "active": True}]},
+            status=200
+        )
+
+        result1 = client.get_allowlist()
+        result2 = client.get_allowlist()
+
+        assert result1 == result2
+        assert len(responses.calls) == 1  # Only one API call
+
+    @responses.activate
+    def test_get_allowlist_api_error(self):
+        """Test allowlist fetch with API error."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            status=500
+        )
+
+        result = client.get_allowlist(use_cache=False)
+        assert result is None
+
+
+class TestFindInAllowlist:
+    """Tests for NextDNSClient.find_in_allowlist method."""
+
+    @responses.activate
+    def test_find_in_allowlist_exists(self):
+        """Test finding domain that exists in allowlist."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": [{"id": "aws.amazon.com", "active": True}]},
+            status=200
+        )
+
+        result = client.find_in_allowlist("aws.amazon.com")
+        assert result == "aws.amazon.com"
+
+    @responses.activate
+    def test_find_in_allowlist_not_found(self):
+        """Test finding domain that doesn't exist in allowlist."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": []},
+            status=200
+        )
+
+        result = client.find_in_allowlist("aws.amazon.com")
+        assert result is None
+
+
+class TestAllow:
+    """Tests for NextDNSClient.allow method."""
+
+    @responses.activate
+    def test_allow_new_domain(self):
+        """Test allowing a new domain."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": []},
+            status=200
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"success": True},
+            status=200
+        )
+
+        result = client.allow("aws.amazon.com")
+        assert result is True
+
+    @responses.activate
+    def test_allow_already_allowed(self):
+        """Test allowing domain already in allowlist."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": [{"id": "aws.amazon.com", "active": True}]},
+            status=200
+        )
+
+        result = client.allow("aws.amazon.com")
+        assert result is True
+        assert len(responses.calls) == 1  # No POST call
+
+    def test_allow_invalid_domain(self):
+        """Test allowing invalid domain raises error."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        with pytest.raises(DomainValidationError):
+            client.allow("invalid domain!")
+
+
+class TestDisallow:
+    """Tests for NextDNSClient.disallow method."""
+
+    @responses.activate
+    def test_disallow_existing_domain(self):
+        """Test removing domain from allowlist."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": [{"id": "aws.amazon.com", "active": True}]},
+            status=200
+        )
+        responses.add(
+            responses.DELETE,
+            f"{API_URL}/profiles/test_profile/allowlist/aws.amazon.com",
+            json={"success": True},
+            status=200
+        )
+
+        result = client.disallow("aws.amazon.com")
+        assert result is True
+
+    @responses.activate
+    def test_disallow_not_in_allowlist(self):
+        """Test disallowing domain not in allowlist."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": []},
+            status=200
+        )
+
+        result = client.disallow("aws.amazon.com")
+        assert result is True
+        assert len(responses.calls) == 1  # No DELETE call
+
+    def test_disallow_invalid_domain(self):
+        """Test disallowing invalid domain raises error."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        with pytest.raises(DomainValidationError):
+            client.disallow("invalid domain!")
+
+
+class TestValidateAllowlistConfig:
+    """Tests for validate_allowlist_config function."""
+
+    def test_valid_config(self):
+        """Test valid allowlist config."""
+        config = {"domain": "aws.amazon.com", "description": "AWS Console"}
+        errors = validate_allowlist_config(config, 0)
+        assert errors == []
+
+    def test_missing_domain(self):
+        """Test config without domain field."""
+        config = {"description": "No domain"}
+        errors = validate_allowlist_config(config, 0)
+        assert len(errors) == 1
+        assert "Missing 'domain'" in errors[0]
+
+    def test_empty_domain(self):
+        """Test config with empty domain."""
+        config = {"domain": ""}
+        errors = validate_allowlist_config(config, 0)
+        assert len(errors) == 1
+        assert "Empty or invalid" in errors[0]
+
+    def test_invalid_domain_format(self):
+        """Test config with invalid domain format."""
+        config = {"domain": "invalid_domain!@#"}
+        errors = validate_allowlist_config(config, 0)
+        assert len(errors) == 1
+        assert "Invalid domain format" in errors[0]
+
+    def test_schedule_not_allowed(self):
+        """Test that schedule field is not allowed in allowlist."""
+        config = {
+            "domain": "aws.amazon.com",
+            "schedule": {"available_hours": []}
+        }
+        errors = validate_allowlist_config(config, 0)
+        assert len(errors) == 1
+        assert "schedule" in errors[0]
+        assert "not allowed" in errors[0]
+
+    def test_null_schedule_ok(self):
+        """Test that null schedule is ok (will be ignored)."""
+        config = {
+            "domain": "aws.amazon.com",
+            "schedule": None
+        }
+        errors = validate_allowlist_config(config, 0)
+        assert errors == []
+
+
+class TestValidateNoOverlap:
+    """Tests for validate_no_overlap function."""
+
+    def test_no_overlap(self):
+        """Test with no overlap between lists."""
+        domains = [{"domain": "amazon.com"}]
+        allowlist = [{"domain": "aws.amazon.com"}]
+        errors = validate_no_overlap(domains, allowlist)
+        assert errors == []
+
+    def test_overlap_detected(self):
+        """Test that overlap is detected."""
+        domains = [{"domain": "example.com"}]
+        allowlist = [{"domain": "example.com"}]
+        errors = validate_no_overlap(domains, allowlist)
+        assert len(errors) == 1
+        assert "both" in errors[0]
+
+    def test_overlap_case_insensitive(self):
+        """Test that overlap detection is case insensitive."""
+        domains = [{"domain": "Example.COM"}]
+        allowlist = [{"domain": "example.com"}]
+        errors = validate_no_overlap(domains, allowlist)
+        assert len(errors) == 1
+
+    def test_empty_lists(self):
+        """Test with empty lists."""
+        errors = validate_no_overlap([], [])
+        assert errors == []
+
+
+class TestCmdAllow:
+    """Tests for cmd_allow command handler."""
+
+    def test_cmd_allow_success(self, capsys):
+        """Test successful allow command."""
+        mock_client = MagicMock()
+        mock_client.allow.return_value = True
+
+        with patch('nextdns_blocker.audit_log'):
+            result = cmd_allow("aws.amazon.com", mock_client, [])
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "Added to allowlist" in captured.out
+
+    def test_cmd_allow_invalid_domain(self, capsys):
+        """Test allow with invalid domain."""
+        mock_client = MagicMock()
+
+        result = cmd_allow("invalid domain!", mock_client, [])
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "Invalid domain" in captured.out
+
+    def test_cmd_allow_warns_if_in_denylist(self, capsys):
+        """Test allow warns if domain is in denylist."""
+        mock_client = MagicMock()
+        mock_client.allow.return_value = True
+
+        with patch('nextdns_blocker.audit_log'):
+            result = cmd_allow("aws.amazon.com", mock_client, ["aws.amazon.com"])
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+
+    def test_cmd_allow_api_failure(self, capsys):
+        """Test allow with API failure."""
+        mock_client = MagicMock()
+        mock_client.allow.return_value = False
+
+        result = cmd_allow("aws.amazon.com", mock_client, [])
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "Failed to add" in captured.out
+
+
+class TestCmdDisallow:
+    """Tests for cmd_disallow command handler."""
+
+    def test_cmd_disallow_success(self, capsys):
+        """Test successful disallow command."""
+        mock_client = MagicMock()
+        mock_client.disallow.return_value = True
+
+        with patch('nextdns_blocker.audit_log'):
+            result = cmd_disallow("aws.amazon.com", mock_client)
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "Removed from allowlist" in captured.out
+
+    def test_cmd_disallow_invalid_domain(self, capsys):
+        """Test disallow with invalid domain."""
+        mock_client = MagicMock()
+
+        result = cmd_disallow("invalid domain!", mock_client)
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "Invalid domain" in captured.out
+
+    def test_cmd_disallow_api_failure(self, capsys):
+        """Test disallow with API failure."""
+        mock_client = MagicMock()
+        mock_client.disallow.return_value = False
+
+        result = cmd_disallow("aws.amazon.com", mock_client)
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "Failed to remove" in captured.out
+
+
+class TestLoadDomainsWithAllowlist:
+    """Tests for load_domains with allowlist support."""
+
+    def test_load_domains_with_allowlist(self, tmp_path):
+        """Test loading domains.json with allowlist."""
+        import json
+        config = {
+            "domains": [{"domain": "amazon.com", "schedule": None}],
+            "allowlist": [{"domain": "aws.amazon.com"}]
+        }
+        json_file = tmp_path / "domains.json"
+        with open(json_file, "w") as f:
+            json.dump(config, f)
+
+        domains, allowlist = load_domains(str(tmp_path))
+
+        assert len(domains) == 1
+        assert domains[0]["domain"] == "amazon.com"
+        assert len(allowlist) == 1
+        assert allowlist[0]["domain"] == "aws.amazon.com"
+
+    def test_load_domains_without_allowlist(self, tmp_path):
+        """Test loading domains.json without allowlist key."""
+        import json
+        config = {
+            "domains": [{"domain": "amazon.com", "schedule": None}]
+        }
+        json_file = tmp_path / "domains.json"
+        with open(json_file, "w") as f:
+            json.dump(config, f)
+
+        domains, allowlist = load_domains(str(tmp_path))
+
+        assert len(domains) == 1
+        assert allowlist == []
+
+    def test_load_domains_overlap_error(self, tmp_path):
+        """Test that overlap between domains and allowlist raises error."""
+        import json
+        config = {
+            "domains": [{"domain": "example.com", "schedule": None}],
+            "allowlist": [{"domain": "example.com"}]
+        }
+        json_file = tmp_path / "domains.json"
+        with open(json_file, "w") as f:
+            json.dump(config, f)
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            load_domains(str(tmp_path))
+
+        assert "validation failed" in str(exc_info.value)
+
+
+class TestCmdSyncWithAllowlist:
+    """Tests for cmd_sync with allowlist support."""
+
+    @responses.activate
+    def test_sync_allowlist_adds_domain(self, tmp_path, capsys):
+        """Test sync adds domains to allowlist."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        # Mock allowlist API calls
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": []},
+            status=200
+        )
+        responses.add(
+            responses.POST,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"success": True},
+            status=200
+        )
+        # Mock denylist API calls
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": []},
+            status=200
+        )
+
+        domains = []
+        allowlist = [{"domain": "aws.amazon.com"}]
+
+        # Create pause file directory
+        pause_file = tmp_path / ".paused"
+
+        with patch('nextdns_blocker.PAUSE_FILE', pause_file):
+            with patch('nextdns_blocker.audit_log'):
+                result = cmd_sync(client, domains, allowlist, [], "UTC", verbose=True)
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "ALLOWED" in captured.out
+
+    @responses.activate
+    def test_sync_dry_run_shows_allowlist(self, tmp_path, capsys):
+        """Test dry-run shows what would be allowed."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": []},
+            status=200
+        )
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": []},
+            status=200
+        )
+
+        domains = []
+        allowlist = [{"domain": "aws.amazon.com"}]
+
+        pause_file = tmp_path / ".paused"
+
+        with patch('nextdns_blocker.PAUSE_FILE', pause_file):
+            result = cmd_sync(client, domains, allowlist, [], "UTC", dry_run=True)
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "WOULD ALLOW" in captured.out
+        assert "Allowlist" in captured.out
+
+
+class TestCmdStatusWithAllowlist:
+    """Tests for cmd_status with allowlist support."""
+
+    @responses.activate
+    def test_status_shows_allowlist(self, tmp_path, capsys):
+        """Test status shows allowlist section."""
+        client = NextDNSClient("test_key", "test_profile")
+
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/allowlist",
+            json={"data": [{"id": "aws.amazon.com", "active": True}]},
+            status=200
+        )
+        responses.add(
+            responses.GET,
+            f"{API_URL}/profiles/test_profile/denylist",
+            json={"data": []},
+            status=200
+        )
+
+        domains = []
+        allowlist = [{"domain": "aws.amazon.com"}]
+
+        pause_file = tmp_path / ".paused"
+
+        with patch('nextdns_blocker.PAUSE_FILE', pause_file):
+            result = cmd_status(client, domains, allowlist, [])
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "allowlist" in captured.out
+        assert "aws.amazon.com" in captured.out
+        assert "active" in captured.out

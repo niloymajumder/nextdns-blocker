@@ -123,6 +123,30 @@
       "domain": "facebook.com",
       "description": "Always blocked (no schedule = always blocked)",
       "schedule": null
+    },
+    {
+      "domain": "amazon.com",
+      "description": "E-commerce - blocked with exceptions via allowlist",
+      "schedule": {
+        "available_hours": [
+          {
+            "days": ["saturday", "sunday"],
+            "time_ranges": [
+              {"start": "10:00", "end": "20:00"}
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "allowlist": [
+    {
+      "domain": "aws.amazon.com",
+      "description": "AWS Console - always accessible (exception to amazon.com)"
+    },
+    {
+      "domain": "developer.amazon.com",
+      "description": "Amazon Developer - always accessible"
     }
   ]
 }
