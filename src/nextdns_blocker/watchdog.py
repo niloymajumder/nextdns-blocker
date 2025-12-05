@@ -1,5 +1,6 @@
 """Cron Watchdog - Monitors and restores cron jobs if deleted."""
 
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -33,13 +34,17 @@ def get_disabled_file() -> Path:
 def get_cron_sync() -> str:
     """Get the sync cron job definition."""
     log_dir = get_log_dir()
-    return f"*/2 * * * * cd {INSTALL_DIR} && nextdns-blocker sync >> {log_dir}/cron.log 2>&1"
+    install_dir = shlex.quote(str(INSTALL_DIR))
+    log_file = shlex.quote(str(log_dir / "cron.log"))
+    return f"*/2 * * * * cd {install_dir} && nextdns-blocker sync >> {log_file} 2>&1"
 
 
 def get_cron_watchdog() -> str:
     """Get the watchdog cron job definition."""
     log_dir = get_log_dir()
-    return f"* * * * * cd {INSTALL_DIR} && nextdns-blocker watchdog check >> {log_dir}/wd.log 2>&1"
+    install_dir = shlex.quote(str(INSTALL_DIR))
+    log_file = shlex.quote(str(log_dir / "wd.log"))
+    return f"* * * * * cd {install_dir} && nextdns-blocker watchdog check >> {log_file} 2>&1"
 
 
 # Keep legacy constants for backwards compatibility with tests
