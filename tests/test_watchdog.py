@@ -24,18 +24,20 @@ def temp_log_dir():
 
 @pytest.fixture
 def mock_disabled_file(temp_log_dir):
-    """Mock the DISABLED_FILE path."""
+    """Mock the DISABLED_FILE path by patching the getter function."""
     disabled_file = temp_log_dir / ".watchdog_disabled"
-    with patch.object(watchdog, 'DISABLED_FILE', disabled_file):
-        yield disabled_file
+    with patch.object(watchdog, 'get_disabled_file', return_value=disabled_file):
+        with patch.object(watchdog, 'DISABLED_FILE', disabled_file):
+            yield disabled_file
 
 
 @pytest.fixture
 def mock_audit_log_file(temp_log_dir):
-    """Mock the AUDIT_LOG_FILE path."""
+    """Mock the AUDIT_LOG_FILE path by patching the common module."""
     audit_file = temp_log_dir / "audit.log"
-    with patch.object(watchdog, 'AUDIT_LOG_FILE', audit_file):
-        yield audit_file
+    with patch('nextdns_blocker.common.get_audit_log_file', return_value=audit_file):
+        with patch('nextdns_blocker.common.get_log_dir', return_value=temp_log_dir):
+            yield audit_file
 
 
 class TestIsDisabled:
@@ -524,18 +526,20 @@ class TestAuditLogWatchdog:
     def test_audit_log_creates_file(self, temp_log_dir):
         """Should create audit log file."""
         audit_file = temp_log_dir / "audit.log"
-        with patch('nextdns_blocker.common.AUDIT_LOG_FILE', audit_file):
-            watchdog.audit_log("TEST", "detail")
-            assert audit_file.exists()
+        with patch('nextdns_blocker.common.get_audit_log_file', return_value=audit_file):
+            with patch('nextdns_blocker.common.get_log_dir', return_value=temp_log_dir):
+                watchdog.audit_log("TEST", "detail")
+                assert audit_file.exists()
 
     def test_audit_log_writes_wd_prefix(self, temp_log_dir):
         """Should write WD prefix in log entries."""
         audit_file = temp_log_dir / "audit.log"
-        with patch('nextdns_blocker.common.AUDIT_LOG_FILE', audit_file):
-            watchdog.audit_log("ACTION", "detail")
-            content = audit_file.read_text()
-            assert "WD" in content
-            assert "ACTION" in content
+        with patch('nextdns_blocker.common.get_audit_log_file', return_value=audit_file):
+            with patch('nextdns_blocker.common.get_log_dir', return_value=temp_log_dir):
+                watchdog.audit_log("ACTION", "detail")
+                content = audit_file.read_text()
+                assert "WD" in content
+                assert "ACTION" in content
 
 
 class TestMain:

@@ -8,13 +8,28 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from platformdirs import user_data_dir
+
 
 # =============================================================================
 # SHARED CONSTANTS
 # =============================================================================
 
-LOG_DIR = Path(os.path.expanduser("~/.local/share/nextdns-blocker/logs"))
-AUDIT_LOG_FILE = LOG_DIR / "audit.log"
+APP_NAME = "nextdns-blocker"
+
+# Use functions for dynamic path resolution (XDG support)
+def get_log_dir() -> Path:
+    """Get the log directory path using XDG conventions."""
+    return Path(user_data_dir(APP_NAME)) / "logs"
+
+def get_audit_log_file() -> Path:
+    """Get the audit log file path."""
+    return get_log_dir() / "audit.log"
+
+# Keep legacy constants for backwards compatibility with tests
+# These are evaluated at import time but point to the same location
+LOG_DIR = get_log_dir()
+AUDIT_LOG_FILE = get_audit_log_file()
 
 # Secure file permissions (owner read/write only)
 SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600
@@ -60,7 +75,7 @@ DAYS_MAP = {
 
 def ensure_log_dir() -> None:
     """Ensure log directory exists. Called lazily when needed."""
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    get_log_dir().mkdir(parents=True, exist_ok=True)
 
 
 # =============================================================================
@@ -182,9 +197,11 @@ def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
     try:
         ensure_log_dir()
 
+        audit_file = get_audit_log_file()
+
         # Create file with secure permissions if it doesn't exist
-        if not AUDIT_LOG_FILE.exists():
-            AUDIT_LOG_FILE.touch(mode=SECURE_FILE_MODE)
+        if not audit_file.exists():
+            audit_file.touch(mode=SECURE_FILE_MODE)
 
         # Build log entry
         parts = [datetime.now().isoformat()]
@@ -194,7 +211,7 @@ def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
         log_entry = " | ".join(parts) + "\n"
 
         # Write with exclusive lock to prevent corruption from concurrent writes
-        with open(AUDIT_LOG_FILE, 'a') as f:
+        with open(audit_file, 'a') as f:
             fcntl.flock(f.fileno(), fcntl.LOCK_EX)
             try:
                 f.write(log_entry)
@@ -213,8 +230,9 @@ def write_secure_file(path: Path, content: str) -> None:
         path: Path to the file
         content: Content to write
     """
-    # Ensure log directory exists if writing to LOG_DIR
-    if path.parent == LOG_DIR:
+    log_dir = get_log_dir()
+    # Ensure log directory exists if writing to log dir
+    if path.parent == log_dir:
         ensure_log_dir()
     else:
         # Create parent directories if needed for other paths

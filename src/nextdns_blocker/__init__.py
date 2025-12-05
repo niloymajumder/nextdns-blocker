@@ -3,7 +3,14 @@
 __version__ = "5.0.0"
 
 from .client import NextDNSClient
-from .config import load_config, load_domains, get_protected_domains
+from .config import (
+    get_config_dir,
+    get_data_dir,
+    get_log_dir,
+    get_protected_domains,
+    load_config,
+    load_domains,
+)
 from .exceptions import (
     NextDNSBlockerError,
     ConfigurationError,
@@ -18,6 +25,9 @@ __all__ = [
     "ScheduleEvaluator",
     "load_config",
     "load_domains",
+    "get_config_dir",
+    "get_data_dir",
+    "get_log_dir",
     "get_protected_domains",
     "NextDNSBlockerError",
     "ConfigurationError",

@@ -534,7 +534,7 @@ class TestCmdSyncWithAllowlist:
         # Create pause file directory
         pause_file = tmp_path / ".paused"
 
-        with patch('nextdns_blocker.cli.PAUSE_FILE', pause_file):
+        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
             with patch('nextdns_blocker.cli.audit_log'):
                 result = cmd_sync(client, domains, allowlist, [], "UTC", verbose=True)
 
@@ -566,7 +566,7 @@ class TestCmdSyncWithAllowlist:
 
         pause_file = tmp_path / ".paused"
 
-        with patch('nextdns_blocker.cli.PAUSE_FILE', pause_file):
+        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
             result = cmd_sync(client, domains, allowlist, [], "UTC", dry_run=True)
 
         assert result == 0
@@ -602,7 +602,7 @@ class TestCmdStatusWithAllowlist:
 
         pause_file = tmp_path / ".paused"
 
-        with patch('nextdns_blocker.cli.PAUSE_FILE', pause_file):
+        with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
             result = cmd_status(client, domains, allowlist, [])
 
         assert result == 0
