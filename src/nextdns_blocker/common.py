@@ -103,12 +103,12 @@ DOMAIN_PATTERN = re.compile(
 # Time format pattern (HH:MM, 24-hour format)
 TIME_PATTERN = re.compile(r"^([01]?[0-9]|2[0-3]):([0-5][0-9])$")
 
-# URL pattern for DOMAINS_URL validation
+# URL pattern for DOMAINS_URL validation (port captured for additional validation)
 URL_PATTERN = re.compile(
     r"^https?://"  # http:// or https://
     r"(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+"  # domain labels
     r"[a-zA-Z]{2,}"  # TLD (at least 2 chars)
-    r"(?::\d{1,5})?"  # optional port
+    r"(?::(\d{1,5}))?"  # optional port (captured for validation)
     r"(?:/[^\s]*)?$",  # optional path
     re.IGNORECASE,
 )
@@ -182,6 +182,11 @@ def validate_url(url: str) -> bool:
     """
     Validate a URL string (must be http or https).
 
+    Validates:
+    - Must be http or https scheme
+    - Valid domain name structure
+    - Port number in valid range (1-65535) if specified
+
     Args:
         url: URL string to validate
 
@@ -190,7 +195,19 @@ def validate_url(url: str) -> bool:
     """
     if not url or not isinstance(url, str):
         return False
-    return URL_PATTERN.match(url) is not None
+
+    match = URL_PATTERN.match(url)
+    if not match:
+        return False
+
+    # Validate port range if present
+    port_str = match.group(1)
+    if port_str:
+        port = int(port_str)
+        if port < 1 or port > 65535:
+            return False
+
+    return True
 
 
 # =============================================================================

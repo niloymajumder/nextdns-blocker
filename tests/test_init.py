@@ -22,7 +22,7 @@ from nextdns_blocker.init import (
 class TestValidateApiCredentials:
     """Tests for validate_api_credentials function."""
 
-    @patch("requests.get")
+    @patch("nextdns_blocker.init.requests.get")
     def test_valid_credentials(self, mock_get):
         """Should return True for valid credentials."""
         mock_response = MagicMock()
@@ -34,7 +34,7 @@ class TestValidateApiCredentials:
         assert valid is True
         assert "valid" in msg.lower()
 
-    @patch("requests.get")
+    @patch("nextdns_blocker.init.requests.get")
     def test_invalid_api_key(self, mock_get):
         """Should return False for invalid API key."""
         mock_response = MagicMock()
@@ -46,7 +46,7 @@ class TestValidateApiCredentials:
         assert valid is False
         assert "Invalid API key" in msg
 
-    @patch("requests.get")
+    @patch("nextdns_blocker.init.requests.get")
     def test_invalid_profile_id(self, mock_get):
         """Should return False for invalid profile ID."""
         mock_response = MagicMock()
@@ -58,7 +58,7 @@ class TestValidateApiCredentials:
         assert valid is False
         assert "not found" in msg.lower()
 
-    @patch("requests.get")
+    @patch("nextdns_blocker.init.requests.get")
     def test_connection_timeout(self, mock_get):
         """Should handle connection timeout."""
         import requests as req
@@ -323,7 +323,7 @@ class TestInitCommand:
 class TestInteractiveWizard:
     """Tests for interactive wizard flow."""
 
-    @patch("requests.get")
+    @patch("nextdns_blocker.init.requests.get")
     def test_wizard_creates_files(self, mock_get, tmp_path):
         """Should create .env and optionally domains.json."""
         mock_response = MagicMock()
@@ -346,7 +346,7 @@ class TestInteractiveWizard:
         assert (tmp_path / ".env").exists()
         assert (tmp_path / "domains.json").exists()
 
-    @patch("requests.get")
+    @patch("nextdns_blocker.init.requests.get")
     def test_wizard_invalid_credentials(self, mock_get, tmp_path):
         """Should fail with invalid credentials."""
         mock_response = MagicMock()
@@ -378,7 +378,7 @@ class TestInteractiveWizard:
 
         assert result is False
 
-    @patch("requests.get")
+    @patch("nextdns_blocker.init.requests.get")
     def test_wizard_skips_domains_creation(self, mock_get, tmp_path):
         """Should skip domains.json when user declines."""
         mock_response = MagicMock()

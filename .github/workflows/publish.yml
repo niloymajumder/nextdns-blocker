@@ -6,8 +6,43 @@ on:
       - 'v*'
 
 jobs:
+  validate-version:
+    name: Validate version consistency
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Extract version from tag
+        id: tag_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Extract version from pyproject.toml
+        id: pkg_version
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Validate version match
+        run: |
+          TAG_VERSION="${{ steps.tag_version.outputs.version }}"
+          PKG_VERSION="${{ steps.pkg_version.outputs.version }}"
+          echo "Tag version: $TAG_VERSION"
+          echo "Package version: $PKG_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Version mismatch! Tag: $TAG_VERSION, pyproject.toml: $PKG_VERSION"
+            exit 1
+          fi
+          echo "✅ Version validated: $TAG_VERSION"
+
   build:
     name: Build distribution
+    needs: validate-version
     runs-on: ubuntu-latest
 
     steps:
@@ -36,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
 
     steps:
       - uses: actions/checkout@v4

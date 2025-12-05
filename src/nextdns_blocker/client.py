@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import threading
 from datetime import datetime
 from time import sleep
@@ -9,7 +10,7 @@ from typing import Any, Optional
 
 import requests
 
-from .common import validate_domain
+from .common import safe_int, validate_domain
 from .config import DEFAULT_RETRIES, DEFAULT_TIMEOUT
 from .exceptions import APIError, DomainValidationError
 
@@ -19,12 +20,12 @@ from .exceptions import APIError, DomainValidationError
 
 API_URL = "https://api.nextdns.io"
 
-# Rate limiting and backoff settings
-RATE_LIMIT_REQUESTS = 30  # Max requests per minute
-RATE_LIMIT_WINDOW = 60  # Window in seconds
+# Rate limiting and backoff settings (configurable via environment variables)
+RATE_LIMIT_REQUESTS = safe_int(os.environ.get("RATE_LIMIT_REQUESTS"), 30)  # Max requests per window
+RATE_LIMIT_WINDOW = safe_int(os.environ.get("RATE_LIMIT_WINDOW"), 60)  # Window in seconds
 BACKOFF_BASE = 1.0  # Base delay for exponential backoff (seconds)
 BACKOFF_MAX = 30.0  # Maximum backoff delay (seconds)
-CACHE_TTL = 60  # Denylist cache TTL in seconds
+CACHE_TTL = safe_int(os.environ.get("CACHE_TTL"), 60)  # Denylist cache TTL in seconds
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,6 @@
 """Configuration loading and validation for NextDNS Blocker."""
 
+import hashlib
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ from platformdirs import user_config_dir, user_data_dir
 
 from .common import (
     APP_NAME,
+    SECURE_FILE_MODE,
     VALID_DAYS,
     parse_env_value,
     safe_int,
@@ -198,7 +200,7 @@ def get_cached_domains(max_age: int = DOMAINS_CACHE_TTL) -> Optional[dict[str, A
 
 def save_domains_cache(data: dict[str, Any]) -> bool:
     """
-    Save domains data to cache.
+    Save domains data to cache with secure permissions.
 
     Args:
         data: Domains data to cache
@@ -213,9 +215,16 @@ def save_domains_cache(data: dict[str, Any]) -> bool:
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         cache = {"timestamp": time.time(), "data": data}
+        content = json.dumps(cache)
 
-        with open(cache_file, "w") as f:
-            json.dump(cache, f)
+        # Write with secure permissions (0o600)
+        fd = os.open(cache_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, SECURE_FILE_MODE)
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(content)
+        except OSError:
+            os.close(fd)
+            raise
 
         logger.debug(f"Saved domains to cache: {cache_file}")
         return True
@@ -225,12 +234,58 @@ def save_domains_cache(data: dict[str, Any]) -> bool:
         return False
 
 
+def verify_remote_domains_hash(content: bytes, hash_url: Optional[str]) -> bool:
+    """
+    Verify the SHA256 hash of remote domains content.
+
+    Args:
+        content: Raw content bytes to verify
+        hash_url: URL to fetch expected hash from (optional)
+
+    Returns:
+        True if hash matches or no hash URL provided, False if mismatch
+    """
+    if not hash_url:
+        return True
+
+    try:
+        # Fetch expected hash
+        response = requests.get(hash_url, timeout=DEFAULT_TIMEOUT)
+        response.raise_for_status()
+        expected_hash = response.text.strip().lower()
+
+        # Handle hash files that include filename (like sha256sum output)
+        if " " in expected_hash:
+            expected_hash = expected_hash.split()[0]
+
+        # Calculate actual hash
+        actual_hash = hashlib.sha256(content).hexdigest().lower()
+
+        if actual_hash != expected_hash:
+            logger.error(
+                f"Hash mismatch for remote domains. "
+                f"Expected: {expected_hash[:16]}..., Got: {actual_hash[:16]}..."
+            )
+            return False
+
+        logger.debug(f"Remote domains hash verified: {actual_hash[:16]}...")
+        return True
+
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Failed to fetch hash for verification: {e}")
+        # If hash verification is configured but fails, treat as warning but allow
+        return True
+
+
 def fetch_remote_domains(url: str, use_cache: bool = True) -> dict[str, Any]:
     """
-    Fetch domains from remote URL with caching support.
+    Fetch domains from remote URL with caching and optional hash verification.
 
-    Attempts to fetch from URL. On success, caches the response.
-    On failure, falls back to cached data if available.
+    Attempts to fetch from URL. On success, verifies hash (if DOMAINS_HASH_URL is set)
+    and caches the response. On failure, falls back to cached data if available.
+
+    Environment variables:
+        DOMAINS_HASH_URL: Optional URL to SHA256 hash file for integrity verification
 
     Args:
         url: URL to fetch domains from
@@ -244,9 +299,20 @@ def fetch_remote_domains(url: str, use_cache: bool = True) -> dict[str, Any]:
     """
     from .exceptions import ConfigurationError
 
+    # Get optional hash URL for verification
+    hash_url = os.environ.get("DOMAINS_HASH_URL")
+
     try:
         response = requests.get(url, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
+
+        # Verify hash if configured
+        if hash_url and not verify_remote_domains_hash(response.content, hash_url):
+            raise ConfigurationError(
+                "Remote domains hash verification failed. "
+                "Content may have been tampered with."
+            )
+
         data = response.json()
 
         # Validate basic structure
@@ -357,6 +423,9 @@ def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
     if not isinstance(hours, list):
         return [f"'{domain}': available_hours must be a list"]
 
+    # Collect all time ranges per day for overlap detection
+    day_time_ranges: dict[str, list[tuple[int, int, int]]] = {}  # day -> [(start_mins, end_mins, block_idx)]
+
     # Validate each schedule block
     for block_idx, block in enumerate(hours):
         if not isinstance(block, dict):
@@ -364,22 +433,74 @@ def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
             continue
 
         # Validate days
+        block_days = []
         for day in block.get("days", []):
-            if isinstance(day, str) and day.lower() not in VALID_DAYS:
-                errors.append(f"'{domain}': invalid day '{day}'")
+            if isinstance(day, str):
+                day_lower = day.lower()
+                if day_lower not in VALID_DAYS:
+                    errors.append(f"'{domain}': invalid day '{day}'")
+                else:
+                    block_days.append(day_lower)
 
         # Validate time ranges
         for tr_idx, time_range in enumerate(block.get("time_ranges", [])):
             if not isinstance(time_range, dict):
                 errors.append(f"'{domain}': time_range #{tr_idx} must be a dictionary")
                 continue
+
+            start_valid = True
+            end_valid = True
             for key in ["start", "end"]:
                 if key not in time_range:
                     errors.append(f"'{domain}': missing '{key}' in time_range")
+                    if key == "start":
+                        start_valid = False
+                    else:
+                        end_valid = False
                 elif not validate_time_format(time_range[key]):
                     errors.append(
                         f"'{domain}': invalid time format '{time_range[key]}' "
                         f"for '{key}' (expected HH:MM)"
+                    )
+                    if key == "start":
+                        start_valid = False
+                    else:
+                        end_valid = False
+
+            # Collect time ranges for overlap detection (only if both start and end are valid)
+            if start_valid and end_valid:
+                start_h, start_m = map(int, time_range["start"].split(":"))
+                end_h, end_m = map(int, time_range["end"].split(":"))
+                start_mins = start_h * 60 + start_m
+                end_mins = end_h * 60 + end_m
+
+                for day in block_days:
+                    if day not in day_time_ranges:
+                        day_time_ranges[day] = []
+                    day_time_ranges[day].append((start_mins, end_mins, block_idx))
+
+    # Check for overlapping time ranges on the same day
+    for day, ranges in day_time_ranges.items():
+        if len(ranges) < 2:
+            continue
+
+        # Sort by start time
+        sorted_ranges = sorted(ranges, key=lambda x: x[0])
+
+        for i in range(len(sorted_ranges) - 1):
+            start1, end1, block1 = sorted_ranges[i]
+            start2, end2, block2 = sorted_ranges[i + 1]
+
+            # Handle overnight ranges (end < start means it crosses midnight)
+            is_overnight1 = end1 < start1
+            is_overnight2 = end2 < start2
+
+            # For non-overnight ranges, check simple overlap
+            if not is_overnight1 and not is_overnight2:
+                if start2 < end1:  # Overlap detected
+                    logger.warning(
+                        f"'{domain}': overlapping time ranges on {day} "
+                        f"(block #{block1} and #{block2})"
                     )
 
     return errors

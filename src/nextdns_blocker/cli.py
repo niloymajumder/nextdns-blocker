@@ -46,16 +46,36 @@ def get_pause_file() -> Path:
 
 
 def setup_logging(verbose: bool = False) -> None:
-    """Setup logging configuration."""
+    """Setup logging configuration.
+
+    This function configures logging with both file and console handlers.
+    It avoids adding duplicate handlers if called multiple times.
+
+    Args:
+        verbose: If True, sets log level to DEBUG; otherwise INFO.
+    """
     ensure_log_dir()
 
     level = logging.DEBUG if verbose else logging.INFO
+    root_logger = logging.getLogger()
 
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[logging.FileHandler(get_app_log_file()), logging.StreamHandler()],
-    )
+    # Avoid adding duplicate handlers
+    if root_logger.handlers:
+        root_logger.setLevel(level)
+        return
+
+    root_logger.setLevel(level)
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+
+    # File handler
+    file_handler = logging.FileHandler(get_app_log_file())
+    file_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
 
 
 logger = logging.getLogger(__name__)
