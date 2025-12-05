@@ -52,9 +52,8 @@ dev = [
     "freezegun>=1.2.0",
 ]
 
-# Entry point will be added in Issue #8 after src/ restructure
-# [project.scripts]
-# nextdns-blocker = "nextdns_blocker.cli:main"
+[project.scripts]
+nextdns-blocker = "nextdns_blocker.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/aristeoibarra/nextdns-blocker"
@@ -62,15 +61,12 @@ Repository = "https://github.com/aristeoibarra/nextdns-blocker"
 Issues = "https://github.com/aristeoibarra/nextdns-blocker/issues"
 Changelog = "https://github.com/aristeoibarra/nextdns-blocker/blob/main/CHANGELOG.md"
 
-# Build targets will be updated in Issue #8 after src/ restructure
-# Currently using flat layout for backwards compatibility
 [tool.hatch.build.targets.wheel]
-packages = ["."]
-only-include = ["nextdns_blocker.py", "watchdog.py", "common.py"]
+packages = ["src/nextdns_blocker"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/*.py",
+    "/src",
     "/tests",
     "/README.md",
     "/CHANGELOG.md",
