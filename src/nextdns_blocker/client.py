@@ -2,6 +2,7 @@
 
 import json
 import logging
+import threading
 from datetime import datetime
 from time import sleep
 from typing import Any, Optional
@@ -10,7 +11,7 @@ import requests
 
 from .common import validate_domain
 from .config import DEFAULT_RETRIES, DEFAULT_TIMEOUT
-from .exceptions import DomainValidationError
+from .exceptions import APIError, DomainValidationError
 
 # =============================================================================
 # CONSTANTS
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 class RateLimiter:
-    """Simple rate limiter using sliding window algorithm."""
+    """Thread-safe rate limiter using sliding window algorithm."""
 
     def __init__(
         self, max_requests: int = RATE_LIMIT_REQUESTS, window_seconds: int = RATE_LIMIT_WINDOW
@@ -49,33 +50,58 @@ class RateLimiter:
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.requests: list[float] = []
+        self._condition = threading.Condition()
 
-    def acquire(self) -> float:
+    def acquire(self, timeout: Optional[float] = None) -> float:
         """
         Acquire permission to make a request, waiting if necessary.
 
+        Args:
+            timeout: Maximum time to wait in seconds (None for no timeout)
+
         Returns:
             Time waited in seconds (0 if no wait was needed)
+
+        Raises:
+            TimeoutError: If timeout is reached while waiting for rate limit
         """
-        now = datetime.now().timestamp()
-        waited = 0.0
+        total_waited = 0.0
+        deadline = None if timeout is None else datetime.now().timestamp() + timeout
 
-        # Remove expired timestamps
-        cutoff = now - self.window_seconds
-        self.requests = [ts for ts in self.requests if ts > cutoff]
-
-        # Check if we need to wait
-        if len(self.requests) >= self.max_requests:
-            # Wait until the oldest request expires
-            wait_time = self.requests[0] - cutoff
-            if wait_time > 0:
-                logger.debug(f"Rate limit reached, waiting {wait_time:.2f}s")
-                sleep(wait_time)
-                waited = wait_time
+        with self._condition:
+            while True:
                 now = datetime.now().timestamp()
 
-        self.requests.append(now)
-        return waited
+                # Check if we've exceeded the timeout
+                if deadline is not None and now >= deadline:
+                    raise TimeoutError("Rate limiter acquire timed out")
+
+                # Remove expired timestamps
+                cutoff = now - self.window_seconds
+                self.requests = [ts for ts in self.requests if ts > cutoff]
+
+                # Check if we can proceed
+                if len(self.requests) < self.max_requests:
+                    self.requests.append(now)
+                    return total_waited
+
+                # Calculate wait time until oldest request expires
+                wait_time = self.requests[0] - cutoff
+                if wait_time <= 0:
+                    # Oldest request already expired, try again
+                    continue
+
+                # Apply timeout constraint if set
+                if deadline is not None:
+                    remaining = deadline - now
+                    wait_time = min(wait_time, remaining)
+
+                logger.debug(f"Rate limit reached, waiting {wait_time:.2f}s")
+
+                # Wait with Condition - releases lock during wait, reacquires before returning
+                # This is thread-safe: other threads can check/modify while we wait
+                self._condition.wait(timeout=wait_time)
+                total_waited += wait_time
 
 
 # =============================================================================
@@ -84,7 +110,7 @@ class RateLimiter:
 
 
 class DomainCache:
-    """Base cache class for domain lists to reduce API calls."""
+    """Thread-safe cache class for domain lists to reduce API calls."""
 
     def __init__(self, ttl: int = CACHE_TTL) -> None:
         """
@@ -97,22 +123,26 @@ class DomainCache:
         self._data: Optional[list[dict[str, Any]]] = None
         self._domains: set[str] = set()
         self._timestamp: float = 0
+        self._lock = threading.Lock()
 
     def is_valid(self) -> bool:
         """Check if cache is still valid."""
-        return self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl
+        with self._lock:
+            return self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl
 
     def get(self) -> Optional[list[dict[str, Any]]]:
         """Get cached data if valid."""
-        if self.is_valid():
-            return self._data
-        return None
+        with self._lock:
+            if self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl:
+                return self._data
+            return None
 
     def set(self, data: list[dict[str, Any]]) -> None:
         """Update cache with new data."""
-        self._data = data
-        self._domains = {entry.get("id", "") for entry in data}
-        self._timestamp = datetime.now().timestamp()
+        with self._lock:
+            self._data = data
+            self._domains = {entry.get("id", "") for entry in data}
+            self._timestamp = datetime.now().timestamp()
 
     def contains(self, domain: str) -> Optional[bool]:
         """
@@ -121,24 +151,28 @@ class DomainCache:
         Returns:
             True/False if cache is valid, None if cache is invalid
         """
-        if not self.is_valid():
-            return None
-        return domain in self._domains
+        with self._lock:
+            if self._data is None or (datetime.now().timestamp() - self._timestamp) >= self.ttl:
+                return None
+            return domain in self._domains
 
     def invalidate(self) -> None:
         """Invalidate the cache."""
-        self._data = None
-        self._domains = set()
-        self._timestamp = 0
+        with self._lock:
+            self._data = None
+            self._domains = set()
+            self._timestamp = 0
 
     def add_domain(self, domain: str) -> None:
         """Add a domain to the cache (for optimistic updates)."""
-        if self._data is not None:
-            self._domains.add(domain)
+        with self._lock:
+            if self._data is not None:
+                self._domains.add(domain)
 
     def remove_domain(self, domain: str) -> None:
         """Remove a domain from the cache (for optimistic updates)."""
-        self._domains.discard(domain)
+        with self._lock:
+            self._domains.discard(domain)
 
 
 class DenylistCache(DomainCache):
@@ -282,6 +316,31 @@ class NextDNSClient:
                 return None
 
         return None
+
+    def request_or_raise(
+        self, method: str, endpoint: str, data: Optional[dict[str, Any]] = None
+    ) -> dict[str, Any]:
+        """
+        Make an HTTP request to the NextDNS API, raising APIError on failure.
+
+        This is an alternative to request() that raises an exception instead
+        of returning None on failure, useful when errors should be propagated.
+
+        Args:
+            method: HTTP method (GET, POST, DELETE)
+            endpoint: API endpoint path
+            data: Optional request body for POST requests
+
+        Returns:
+            Response JSON as dict
+
+        Raises:
+            APIError: If the request fails after all retries
+        """
+        result = self.request(method, endpoint, data)
+        if result is None:
+            raise APIError(f"API request failed: {method} {endpoint}")
+        return result
 
     # -------------------------------------------------------------------------
     # DENYLIST METHODS

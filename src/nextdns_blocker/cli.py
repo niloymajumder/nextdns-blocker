@@ -520,7 +520,7 @@ def health(config_dir: Optional[Path]) -> None:
             checks_passed += 1
         else:
             click.echo("  [✗] Log directory not accessible")
-    except Exception as e:
+    except (OSError, PermissionError) as e:
         click.echo(f"  [✗] Log directory: {e}")
 
     # Summary
@@ -551,10 +551,10 @@ def stats() -> None:
         for line in lines:
             parts = line.strip().split(" | ")
             if len(parts) >= 2:
-                action = parts[1] if len(parts) == 3 else parts[1]
-                # Skip WD prefix entries or extract action
-                if action == "WD":
-                    action = parts[2] if len(parts) > 2 else "UNKNOWN"
+                action = parts[1]
+                # Handle WD prefix entries: [timestamp, WD, action, detail]
+                if action == "WD" and len(parts) > 2:
+                    action = parts[2]
                 actions[action] = actions.get(action, 0) + 1
 
         if actions:
@@ -565,7 +565,7 @@ def stats() -> None:
 
         click.echo(f"\n  Total entries: {len(lines)}\n")
 
-    except Exception as e:
+    except (OSError, IOError, ValueError) as e:
         click.echo(f"  Error reading stats: {e}\n", err=True)
 
 

@@ -113,7 +113,7 @@ DOMAINS_URL={domains_url}
     try:
         with os.fdopen(fd, "w") as f:
             f.write(content)
-    except Exception:
+    except OSError:
         os.close(fd)
         raise
 

@@ -1,5 +1,9 @@
 # NextDNS Blocker - Docker Compose Configuration
-# Run with: docker compose up -d
+#
+# Setup:
+#   1. Copy .env.example to .env
+#   2. Edit .env with your NextDNS credentials
+#   3. Run: docker compose up -d
 
 services:
   nextdns-blocker:
@@ -20,9 +24,9 @@ services:
       # Mount domains.json for local configuration (optional if using DOMAINS_URL)
       - ./domains.json:/app/domains.json:ro
       # Persist logs
-      - nextdns-logs:/home/blocker/.local/share/nextdns-audit/logs
-    # Run sync every 5 minutes using watchdog
-    command: ["python", "watchdog.py"]
+      - nextdns-logs:/home/blocker/.local/share/nextdns-blocker/logs
+    # Run watchdog which manages sync cron jobs
+    command: ["nextdns-blocker", "watchdog", "check"]
 
 volumes:
   nextdns-logs:

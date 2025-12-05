@@ -101,7 +101,7 @@ class TestLoadConfig:
 
     def test_load_config_missing_profile_id(self, temp_dir):
         """Test that missing profile ID raises ConfigurationError."""
-        with patch.dict(os.environ, {"NEXTDNS_API_KEY": "test_key"}, clear=True):
+        with patch.dict(os.environ, {"NEXTDNS_API_KEY": "testkey12345"}, clear=True):
             os.environ.pop("NEXTDNS_PROFILE_ID", None)
 
             with pytest.raises(ConfigurationError) as exc_info:
@@ -313,8 +313,8 @@ class TestLoadConfigWithEnvFile:
         """Test that load_config parses .env file correctly."""
         env_content = """
 # Comment line
-NEXTDNS_API_KEY=test_api_key
-NEXTDNS_PROFILE_ID=test_profile
+NEXTDNS_API_KEY=testapikey123
+NEXTDNS_PROFILE_ID=testprofile
 
 TIMEZONE=America/New_York
 API_TIMEOUT=30
@@ -327,8 +327,8 @@ API_RETRIES=5
         with patch.dict(os.environ, {}, clear=True):
             config = load_config(config_dir=temp_dir)
 
-            assert config["api_key"] == "test_api_key"
-            assert config["profile_id"] == "test_profile"
+            assert config["api_key"] == "testapikey123"
+            assert config["profile_id"] == "testprofile"
             assert config["timezone"] == "America/New_York"
             assert config["timeout"] == 30
             assert config["retries"] == 5
@@ -336,8 +336,8 @@ API_RETRIES=5
     def test_load_config_invalid_timezone_raises(self, temp_dir):
         """Test that invalid timezone raises ConfigurationError."""
         env_content = """
-NEXTDNS_API_KEY=test_key
-NEXTDNS_PROFILE_ID=test_profile
+NEXTDNS_API_KEY=testkey12345
+NEXTDNS_PROFILE_ID=testprofile
 TIMEZONE=Invalid/Timezone
 """
         env_file = temp_dir / ".env"
@@ -351,8 +351,8 @@ TIMEZONE=Invalid/Timezone
     def test_load_config_skips_invalid_lines(self, temp_dir):
         """Test that invalid lines in .env are skipped."""
         env_content = """
-NEXTDNS_API_KEY=test_key
-NEXTDNS_PROFILE_ID=test_profile
+NEXTDNS_API_KEY=testkey12345
+NEXTDNS_PROFILE_ID=testprofile
 invalid_line_no_equals
 =empty_key
 TIMEZONE=UTC
@@ -363,13 +363,13 @@ TIMEZONE=UTC
         with patch.dict(os.environ, {}, clear=True):
             # Should not raise, just skip invalid lines
             config = load_config(config_dir=temp_dir)
-            assert config["api_key"] == "test_key"
+            assert config["api_key"] == "testkey12345"
 
     def test_load_config_quoted_values(self, temp_dir):
         """Test that quoted values in .env are parsed correctly."""
         env_content = """
-NEXTDNS_API_KEY="quoted_key"
-NEXTDNS_PROFILE_ID='single_quoted'
+NEXTDNS_API_KEY="quotedkey123"
+NEXTDNS_PROFILE_ID='singlequoted'
 TIMEZONE=UTC
 """
         env_file = temp_dir / ".env"
@@ -377,27 +377,27 @@ TIMEZONE=UTC
 
         with patch.dict(os.environ, {}, clear=True):
             config = load_config(config_dir=temp_dir)
-            assert config["api_key"] == "quoted_key"
-            assert config["profile_id"] == "single_quoted"
+            assert config["api_key"] == "quotedkey123"
+            assert config["profile_id"] == "singlequoted"
 
     def test_load_config_handles_bom(self, temp_dir):
         """Test that .env file with BOM is parsed correctly."""
         env_content = (
-            "\ufeffNEXTDNS_API_KEY=bom_key\nNEXTDNS_PROFILE_ID=bom_profile\nTIMEZONE=UTC\n"
+            "\ufeffNEXTDNS_API_KEY=bomkey12345\nNEXTDNS_PROFILE_ID=bomprofile\nTIMEZONE=UTC\n"
         )
         env_file = temp_dir / ".env"
         env_file.write_text(env_content, encoding="utf-8")
 
         with patch.dict(os.environ, {}, clear=True):
             config = load_config(config_dir=temp_dir)
-            assert config["api_key"] == "bom_key"
-            assert config["profile_id"] == "bom_profile"
+            assert config["api_key"] == "bomkey12345"
+            assert config["profile_id"] == "bomprofile"
 
     def test_load_config_invalid_domains_url(self, temp_dir):
         """Test that invalid DOMAINS_URL raises ConfigurationError."""
         env_content = """
-NEXTDNS_API_KEY=test_key
-NEXTDNS_PROFILE_ID=test_profile
+NEXTDNS_API_KEY=testkey12345
+NEXTDNS_PROFILE_ID=testprofile
 TIMEZONE=UTC
 DOMAINS_URL=not_a_valid_url
 """
@@ -412,8 +412,8 @@ DOMAINS_URL=not_a_valid_url
     def test_load_config_valid_domains_url(self, temp_dir):
         """Test that valid DOMAINS_URL is accepted."""
         env_content = """
-NEXTDNS_API_KEY=test_key
-NEXTDNS_PROFILE_ID=test_profile
+NEXTDNS_API_KEY=testkey12345
+NEXTDNS_PROFILE_ID=testprofile
 TIMEZONE=UTC
 DOMAINS_URL=https://example.com/domains.json
 """

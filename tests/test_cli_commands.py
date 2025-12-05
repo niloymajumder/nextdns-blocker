@@ -173,19 +173,19 @@ class TestUnblockCommand:
         """Test successful unblock command."""
         responses.add(
             responses.GET,
-            f"{API_URL}/profiles/test_profile/denylist",
+            f"{API_URL}/profiles/testprofile/denylist",
             json={"data": [{"id": "example.com", "active": True}]},
             status=200,
         )
         responses.add(
             responses.DELETE,
-            f"{API_URL}/profiles/test_profile/denylist/example.com",
+            f"{API_URL}/profiles/testprofile/denylist/example.com",
             json={"success": True},
             status=200,
         )
 
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
         domains_file = tmp_path / "domains.json"
         domains_file.write_text(
             '{"domains": [{"domain": "example.com", "schedule": null}], "allowlist": []}'
@@ -200,7 +200,7 @@ class TestUnblockCommand:
     def test_unblock_invalid_domain(self, runner, mock_pause_file, tmp_path):
         """Test unblock command fails for invalid domain."""
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
         domains_file = tmp_path / "domains.json"
         domains_file.write_text(
             '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
@@ -227,7 +227,7 @@ class TestSyncCommand:
         mock_pause_file.write_text(future_time.isoformat())
 
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
         result = runner.invoke(main, ["sync", "--config-dir", str(tmp_path)])
         assert result.exit_code == 0
@@ -238,13 +238,13 @@ class TestSyncCommand:
         """Test sync with dry-run flag."""
         responses.add(
             responses.GET,
-            f"{API_URL}/profiles/test_profile/denylist",
+            f"{API_URL}/profiles/testprofile/denylist",
             json={"data": []},
             status=200,
         )
 
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
         domains_file = tmp_path / "domains.json"
         domains_file.write_text(
             '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
@@ -259,13 +259,13 @@ class TestSyncCommand:
         """Test sync with verbose flag."""
         responses.add(
             responses.GET,
-            f"{API_URL}/profiles/test_profile/denylist",
+            f"{API_URL}/profiles/testprofile/denylist",
             json={"data": [{"id": "test.com", "active": True}]},
             status=200,
         )
 
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
         domains_file = tmp_path / "domains.json"
         domains_file.write_text(
             '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
@@ -279,19 +279,19 @@ class TestSyncCommand:
         """Test sync blocks domains that should be blocked."""
         responses.add(
             responses.GET,
-            f"{API_URL}/profiles/test_profile/denylist",
+            f"{API_URL}/profiles/testprofile/denylist",
             json={"data": []},
             status=200,
         )
         responses.add(
             responses.POST,
-            f"{API_URL}/profiles/test_profile/denylist",
+            f"{API_URL}/profiles/testprofile/denylist",
             json={"success": True},
             status=200,
         )
 
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
         domains_file = tmp_path / "domains.json"
         domains_file.write_text(
             '{"domains": [{"domain": "block-me.com", "schedule": null}], "allowlist": []}'
@@ -311,19 +311,19 @@ class TestStatusCommand:
         """Test status command shows domains."""
         responses.add(
             responses.GET,
-            f"{API_URL}/profiles/test_profile/denylist",
+            f"{API_URL}/profiles/testprofile/denylist",
             json={"data": [{"id": "example.com", "active": True}]},
             status=200,
         )
         responses.add(
             responses.GET,
-            f"{API_URL}/profiles/test_profile/allowlist",
+            f"{API_URL}/profiles/testprofile/allowlist",
             json={"data": []},
             status=200,
         )
 
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
         domains_file = tmp_path / "domains.json"
         domains_file.write_text(
             '{"domains": [{"domain": "example.com", "schedule": null}], "allowlist": []}'
@@ -343,7 +343,7 @@ class TestStatusCommand:
                 with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
                     mock_config.return_value = {
                         "api_key": "test",
-                        "profile_id": "test_profile",
+                        "profile_id": "testprofile",
                         "timeout": 10,
                         "retries": 3,
                         "timezone": "UTC",
@@ -362,43 +362,40 @@ class TestStatusCommand:
 class TestHealthCommand:
     """Tests for health CLI command."""
 
-    @responses.activate
     def test_health_all_ok(self, runner, mock_pause_file, tmp_path):
         """Test health command when everything is healthy."""
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/test_profile/denylist",
-            json={"data": []},
-            status=200,
-        )
-
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
         domains_file = tmp_path / "domains.json"
         domains_file.write_text(
             '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
-        with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
-            result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
+        with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
+            mock_client = mock_client_cls.return_value
+            mock_client.get_denylist.return_value = []  # Successful API call
+
+            with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
+                result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "HEALTHY" in result.output
 
-    @responses.activate
     def test_health_api_failure(self, runner, mock_pause_file, tmp_path):
         """Test health command when API fails."""
-        responses.add(responses.GET, f"{API_URL}/profiles/test_profile/denylist", status=401)
-
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=bad_key\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=badkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
         domains_file = tmp_path / "domains.json"
         domains_file.write_text(
             '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
-        with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
-            result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
+        with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
+            mock_client = mock_client_cls.return_value
+            mock_client.get_denylist.return_value = None  # API failure
+
+            with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
+                result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
 
         # API failure causes exit code 1
         assert result.exit_code == 1
@@ -469,7 +466,7 @@ class TestDomainValidationInClient:
     @responses.activate
     def test_block_validates_domain(self):
         """Test that block method validates domain format."""
-        client = NextDNSClient("test_key", "test_profile")
+        client = NextDNSClient("testkey12345", "testprofile")
 
         with pytest.raises(DomainValidationError):
             client.block("invalid domain!")
@@ -477,7 +474,7 @@ class TestDomainValidationInClient:
     @responses.activate
     def test_unblock_validates_domain(self):
         """Test that unblock method validates domain format."""
-        client = NextDNSClient("test_key", "test_profile")
+        client = NextDNSClient("testkey12345", "testprofile")
 
         with pytest.raises(DomainValidationError):
             client.unblock("invalid domain!")
@@ -556,19 +553,19 @@ class TestSyncWithDomainsUrl:
         )
         responses.add(
             responses.GET,
-            f"{API_URL}/profiles/test_profile/denylist",
+            f"{API_URL}/profiles/testprofile/denylist",
             json={"data": []},
             status=200,
         )
         responses.add(
             responses.POST,
-            f"{API_URL}/profiles/test_profile/denylist",
+            f"{API_URL}/profiles/testprofile/denylist",
             json={"success": True},
             status=200,
         )
 
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
         with patch(
             "nextdns_blocker.config.get_domains_cache_file", return_value=tmp_path / "cache.json"
@@ -589,19 +586,19 @@ class TestAllowCommand:
         """Test successful allow command."""
         responses.add(
             responses.GET,
-            f"{API_URL}/profiles/test_profile/allowlist",
+            f"{API_URL}/profiles/testprofile/allowlist",
             json={"data": []},
             status=200,
         )
         responses.add(
             responses.POST,
-            f"{API_URL}/profiles/test_profile/allowlist",
+            f"{API_URL}/profiles/testprofile/allowlist",
             json={"success": True},
             status=200,
         )
 
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
         with patch("nextdns_blocker.cli.audit_log"):
             result = runner.invoke(main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)])
@@ -612,7 +609,7 @@ class TestAllowCommand:
     def test_allow_invalid_domain(self, runner, mock_pause_file, tmp_path):
         """Test allow with invalid domain."""
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
         result = runner.invoke(main, ["allow", "invalid domain!", "--config-dir", str(tmp_path)])
         assert result.exit_code == 1
@@ -627,19 +624,19 @@ class TestDisallowCommand:
         """Test successful disallow command."""
         responses.add(
             responses.GET,
-            f"{API_URL}/profiles/test_profile/allowlist",
+            f"{API_URL}/profiles/testprofile/allowlist",
             json={"data": [{"id": "aws.amazon.com", "active": True}]},
             status=200,
         )
         responses.add(
             responses.DELETE,
-            f"{API_URL}/profiles/test_profile/allowlist/aws.amazon.com",
+            f"{API_URL}/profiles/testprofile/allowlist/aws.amazon.com",
             json={"success": True},
             status=200,
         )
 
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
         with patch("nextdns_blocker.cli.audit_log"):
             result = runner.invoke(
@@ -652,7 +649,7 @@ class TestDisallowCommand:
     def test_disallow_invalid_domain(self, runner, mock_pause_file, tmp_path):
         """Test disallow with invalid domain."""
         env_file = tmp_path / ".env"
-        env_file.write_text("NEXTDNS_API_KEY=test\nNEXTDNS_PROFILE_ID=test_profile\n")
+        env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
         result = runner.invoke(main, ["disallow", "invalid domain!", "--config-dir", str(tmp_path)])
         assert result.exit_code == 1

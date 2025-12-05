@@ -44,10 +44,6 @@ def get_cron_watchdog() -> str:
     return f"* * * * * cd {install_dir} && nextdns-blocker watchdog check >> {log_file} 2>&1"
 
 
-# Keep legacy constants for backwards compatibility with tests
-DISABLED_FILE = get_disabled_file()
-CRON_SYNC = get_cron_sync()
-CRON_WATCHDOG = get_cron_watchdog()
 
 
 def audit_log(action: str, detail: str = "") -> None:
@@ -62,7 +58,8 @@ def audit_log(action: str, detail: str = "") -> None:
 
 def is_disabled() -> bool:
     """Check if watchdog is temporarily or permanently disabled."""
-    content = read_secure_file(DISABLED_FILE)
+    disabled_file = get_disabled_file()
+    content = read_secure_file(disabled_file)
     if not content:
         return False
 
@@ -83,7 +80,8 @@ def is_disabled() -> bool:
 
 def get_disabled_remaining() -> str:
     """Get remaining disabled time as human-readable string."""
-    content = read_secure_file(DISABLED_FILE)
+    disabled_file = get_disabled_file()
+    content = read_secure_file(disabled_file)
     if not content:
         return ""
 
@@ -107,25 +105,27 @@ def get_disabled_remaining() -> str:
 def _remove_disabled_file() -> None:
     """Remove the disabled file safely."""
     try:
-        DISABLED_FILE.unlink(missing_ok=True)
+        get_disabled_file().unlink(missing_ok=True)
     except OSError as e:
         logger.debug(f"Failed to remove disabled file: {e}")
 
 
 def set_disabled(minutes: Optional[int] = None) -> None:
     """Disable watchdog temporarily or permanently."""
+    disabled_file = get_disabled_file()
     if minutes:
         disabled_until = datetime.now().replace(microsecond=0) + timedelta(minutes=minutes)
-        write_secure_file(DISABLED_FILE, disabled_until.isoformat())
+        write_secure_file(disabled_file, disabled_until.isoformat())
         audit_log("WD_DISABLED", f"{minutes} minutes until {disabled_until.isoformat()}")
     else:
-        write_secure_file(DISABLED_FILE, "permanent")
+        write_secure_file(disabled_file, "permanent")
         audit_log("WD_DISABLED", "permanent")
 
 
 def clear_disabled() -> bool:
     """Re-enable watchdog. Returns True if was disabled."""
-    if DISABLED_FILE.exists():
+    disabled_file = get_disabled_file()
+    if disabled_file.exists():
         _remove_disabled_file()
         audit_log("WD_ENABLED", "Manual enable")
         return True
@@ -151,10 +151,16 @@ def get_crontab() -> str:
 def set_crontab(content: str) -> bool:
     """Set the user's crontab contents."""
     try:
-        process = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE, text=True)
-        process.communicate(input=content, timeout=SUBPROCESS_TIMEOUT)
-        return process.returncode == 0
-    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        result = subprocess.run(
+            ["crontab", "-"],
+            input=content,
+            text=True,
+            capture_output=True,
+            timeout=SUBPROCESS_TIMEOUT,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired) as e:
+        logger.warning(f"Failed to set crontab: {e}")
         return False
 
 
@@ -168,7 +174,7 @@ def has_watchdog_cron(crontab: str) -> bool:
     return "nextdns-blocker watchdog" in crontab
 
 
-def filter_our_cron_jobs(crontab: str) -> list:
+def filter_our_cron_jobs(crontab: str) -> list[str]:
     """Remove our cron jobs from crontab, keeping other entries."""
     return [line for line in crontab.split("\n") if "nextdns-blocker" not in line and line.strip()]
 
@@ -199,7 +205,7 @@ def cmd_check() -> None:
     if not has_sync_cron(crontab):
         audit_log("CRON_DELETED", "Sync cron missing")
         new_crontab = crontab.strip()
-        new_crontab = (new_crontab + "\n" if new_crontab else "") + CRON_SYNC + "\n"
+        new_crontab = (new_crontab + "\n" if new_crontab else "") + get_cron_sync() + "\n"
         if set_crontab(new_crontab):
             click.echo("  sync cron restored")
             restored = True
@@ -209,7 +215,7 @@ def cmd_check() -> None:
         audit_log("WD_CRON_DELETED", "Watchdog cron missing")
         crontab = get_crontab()
         new_crontab = crontab.strip()
-        new_crontab = (new_crontab + "\n" if new_crontab else "") + CRON_WATCHDOG + "\n"
+        new_crontab = (new_crontab + "\n" if new_crontab else "") + get_cron_watchdog() + "\n"
         if set_crontab(new_crontab):
             click.echo("  watchdog cron restored")
             restored = True
@@ -227,7 +233,7 @@ def cmd_install() -> None:
     """Install sync and watchdog cron jobs."""
     crontab = get_crontab()
     lines = filter_our_cron_jobs(crontab)
-    lines.extend([CRON_SYNC, CRON_WATCHDOG])
+    lines.extend([get_cron_sync(), get_cron_watchdog()])
 
     if set_crontab("\n".join(lines) + "\n"):
         audit_log("CRON_INSTALLED", "Manual install")

@@ -40,6 +40,12 @@ htmlcov/
 .tox/
 .nox/
 
+# Type checking
+.mypy_cache/
+
+# Linting
+.ruff_cache/
+
 # Compiled binaries
 *.bin
 

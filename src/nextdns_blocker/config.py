@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -14,6 +15,7 @@ import requests
 from platformdirs import user_config_dir, user_data_dir
 
 from .common import (
+    APP_NAME,
     VALID_DAYS,
     parse_env_value,
     safe_int,
@@ -24,10 +26,52 @@ from .common import (
 from .exceptions import ConfigurationError
 
 # =============================================================================
+# CREDENTIAL VALIDATION PATTERNS
+# =============================================================================
+
+# NextDNS API key pattern: alphanumeric with optional underscores/hyphens
+# Minimum 8 characters for flexibility with test keys
+API_KEY_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{8,}$")
+
+# NextDNS Profile ID pattern: alphanumeric, typically 6 characters like "abc123"
+PROFILE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,30}$")
+
+
+def validate_api_key(api_key: str) -> bool:
+    """
+    Validate NextDNS API key format.
+
+    Args:
+        api_key: API key string to validate
+
+    Returns:
+        True if valid format, False otherwise
+    """
+    if not api_key or not isinstance(api_key, str):
+        return False
+    return API_KEY_PATTERN.match(api_key.strip()) is not None
+
+
+def validate_profile_id(profile_id: str) -> bool:
+    """
+    Validate NextDNS Profile ID format.
+
+    Args:
+        profile_id: Profile ID string to validate
+
+    Returns:
+        True if valid format, False otherwise
+    """
+    if not profile_id or not isinstance(profile_id, str):
+        return False
+    return PROFILE_ID_PATTERN.match(profile_id.strip()) is not None
+
+
+# =============================================================================
 # CONSTANTS
 # =============================================================================
 
-APP_NAME = "nextdns-blocker"
+# APP_NAME is imported from common.py to avoid duplication
 DEFAULT_TIMEOUT = 10
 DEFAULT_RETRIES = 3
 DEFAULT_TIMEZONE = "UTC"
@@ -541,12 +585,24 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
         "script_dir": str(config_dir),
     }
 
-    # Validate required fields
+    # Validate required fields and their format
     if not config["api_key"]:
         raise ConfigurationError("Missing NEXTDNS_API_KEY in .env or environment")
 
+    if not validate_api_key(config["api_key"]):
+        raise ConfigurationError(
+            "Invalid NEXTDNS_API_KEY format. "
+            "API key should be alphanumeric (with optional - or _) and at least 8 characters."
+        )
+
     if not config["profile_id"]:
         raise ConfigurationError("Missing NEXTDNS_PROFILE_ID in .env or environment")
+
+    if not validate_profile_id(config["profile_id"]):
+        raise ConfigurationError(
+            "Invalid NEXTDNS_PROFILE_ID format. "
+            "Profile ID should be alphanumeric (4-30 characters)."
+        )
 
     # Validate timezone early to fail fast
     try:

@@ -96,8 +96,8 @@ def temp_dir():
 def mock_env_vars():
     """Mock environment variables for configuration."""
     env_vars = {
-        "NEXTDNS_API_KEY": "test_api_key_12345",
-        "NEXTDNS_PROFILE_ID": "test_profile_id",
+        "NEXTDNS_API_KEY": "test_api_key_12345",  # Must be at least 8 chars
+        "NEXTDNS_PROFILE_ID": "testprofile",  # Must be 4-30 chars
         "TIMEZONE": "UTC",
     }
     with patch.dict(os.environ, env_vars, clear=False):

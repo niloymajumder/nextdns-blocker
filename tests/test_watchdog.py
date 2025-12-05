@@ -24,11 +24,10 @@ def temp_log_dir():
 
 @pytest.fixture
 def mock_disabled_file(temp_log_dir):
-    """Mock the DISABLED_FILE path by patching the getter function."""
+    """Mock the disabled file path by patching the getter function."""
     disabled_file = temp_log_dir / ".watchdog_disabled"
     with patch.object(watchdog, "get_disabled_file", return_value=disabled_file):
-        with patch.object(watchdog, "DISABLED_FILE", disabled_file):
-            yield disabled_file
+        yield disabled_file
 
 
 @pytest.fixture
@@ -226,27 +225,25 @@ class TestSetCrontab:
 
     def test_set_crontab_success(self):
         """Should return True on success."""
-        mock_process = MagicMock()
-        mock_process.returncode = 0
-        mock_process.communicate = MagicMock()
+        mock_result = MagicMock()
+        mock_result.returncode = 0
 
-        with patch("subprocess.Popen", return_value=mock_process):
+        with patch("subprocess.run", return_value=mock_result):
             result = watchdog.set_crontab("*/5 * * * * job\n")
             assert result is True
 
     def test_set_crontab_failure(self):
         """Should return False on failure."""
-        mock_process = MagicMock()
-        mock_process.returncode = 1
-        mock_process.communicate = MagicMock()
+        mock_result = MagicMock()
+        mock_result.returncode = 1
 
-        with patch("subprocess.Popen", return_value=mock_process):
+        with patch("subprocess.run", return_value=mock_result):
             result = watchdog.set_crontab("*/5 * * * * job\n")
             assert result is False
 
     def test_set_crontab_error(self):
         """Should return False on error."""
-        with patch("subprocess.Popen", side_effect=OSError("error")):
+        with patch("subprocess.run", side_effect=OSError("error")):
             result = watchdog.set_crontab("*/5 * * * * job\n")
             assert result is False
 

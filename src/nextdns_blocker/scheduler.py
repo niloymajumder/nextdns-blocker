@@ -171,24 +171,24 @@ class ScheduleEvaluator:
         """
         return self.should_block(domain_config.get("schedule"))
 
-    def get_next_change(self, domain_config: dict[str, Any]) -> Optional[dict[str, Any]]:
+    def get_blocking_status(self, domain_config: dict[str, Any]) -> dict[str, Any]:
         """
-        Get information about the next schedule change for a domain.
+        Get the current blocking status for a domain.
 
         Args:
             domain_config: Domain configuration containing schedule
 
         Returns:
-            Dictionary with 'action' (block/unblock) and 'time' (datetime),
-            or None if no schedule
+            Dictionary with:
+                - 'domain': Domain name
+                - 'currently_blocked': Whether the domain is currently blocked
+                - 'has_schedule': Whether the domain has a schedule defined
         """
         schedule = domain_config.get("schedule")
-        if not schedule or "available_hours" not in schedule:
-            return None
-
-        currently_blocked = self.should_block(schedule)
+        has_schedule = schedule is not None and "available_hours" in schedule
 
         return {
-            "currently_blocked": currently_blocked,
             "domain": domain_config.get("domain", "unknown"),
+            "currently_blocked": self.should_block(schedule),
+            "has_schedule": has_schedule,
         }

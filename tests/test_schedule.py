@@ -197,3 +197,133 @@ class TestTimezone:
     def test_utc_timezone(self):
         evaluator = ScheduleEvaluator("UTC")
         assert str(evaluator.tz) == "UTC"
+
+
+class TestGetCurrentTime:
+    """Tests for _get_current_time method."""
+
+    def test_returns_timezone_aware_datetime(self):
+        evaluator = ScheduleEvaluator("UTC")
+        current = evaluator._get_current_time()
+        assert current.tzinfo is not None
+        assert str(current.tzinfo) == "UTC"
+
+    def test_respects_configured_timezone(self):
+        evaluator = ScheduleEvaluator("America/New_York")
+        current = evaluator._get_current_time()
+        assert str(current.tzinfo) == "America/New_York"
+
+    def test_returns_datetime_instance(self):
+        evaluator = ScheduleEvaluator()
+        current = evaluator._get_current_time()
+        assert isinstance(current, datetime)
+
+
+class TestShouldBlockDomain:
+    """Tests for should_block_domain convenience wrapper."""
+
+    def _mock_datetime(self, year, month, day, hour, minute):
+        """Helper to create a mock datetime with timezone."""
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("UTC")
+        return datetime(year, month, day, hour, minute, tzinfo=tz)
+
+    def test_should_block_domain_with_schedule(self, sample_domain_config):
+        """Test should_block_domain extracts schedule correctly."""
+        evaluator = ScheduleEvaluator()
+        # Wednesday at 10:00 (within 09:00-17:00)
+        mock_now = self._mock_datetime(2025, 11, 26, 10, 0)
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            result = evaluator.should_block_domain(sample_domain_config)
+            assert result is False
+
+    def test_should_block_domain_no_schedule(self):
+        """Test should_block_domain with no schedule key."""
+        evaluator = ScheduleEvaluator()
+        domain_config = {"domain": "example.com"}
+        result = evaluator.should_block_domain(domain_config)
+        assert result is True  # No schedule = always blocked
+
+    def test_should_block_domain_null_schedule(self, always_blocked_config):
+        """Test should_block_domain with null schedule."""
+        evaluator = ScheduleEvaluator()
+        result = evaluator.should_block_domain(always_blocked_config)
+        assert result is True
+
+    def test_should_block_domain_outside_hours(self, sample_domain_config):
+        """Test should_block_domain outside available hours."""
+        evaluator = ScheduleEvaluator()
+        # Wednesday at 08:00 (before 09:00)
+        mock_now = self._mock_datetime(2025, 11, 26, 8, 0)
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            result = evaluator.should_block_domain(sample_domain_config)
+            assert result is True
+
+
+class TestGetBlockingStatus:
+    """Tests for get_blocking_status method."""
+
+    def _mock_datetime(self, year, month, day, hour, minute):
+        """Helper to create a mock datetime with timezone."""
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("UTC")
+        return datetime(year, month, day, hour, minute, tzinfo=tz)
+
+    def test_status_includes_domain(self, sample_domain_config):
+        """Test that status includes domain name."""
+        evaluator = ScheduleEvaluator()
+        status = evaluator.get_blocking_status(sample_domain_config)
+        assert "domain" in status
+        assert status["domain"] == "example.com"
+
+    def test_status_includes_has_schedule_true(self, sample_domain_config):
+        """Test has_schedule is True when schedule defined."""
+        evaluator = ScheduleEvaluator()
+        status = evaluator.get_blocking_status(sample_domain_config)
+        assert "has_schedule" in status
+        assert status["has_schedule"] is True
+
+    def test_status_includes_has_schedule_false(self, always_blocked_config):
+        """Test has_schedule is False when no schedule."""
+        evaluator = ScheduleEvaluator()
+        status = evaluator.get_blocking_status(always_blocked_config)
+        assert status["has_schedule"] is False
+
+    def test_status_includes_currently_blocked(self, sample_domain_config):
+        """Test currently_blocked reflects schedule evaluation."""
+        evaluator = ScheduleEvaluator()
+        # Wednesday at 10:00 (within 09:00-17:00)
+        mock_now = self._mock_datetime(2025, 11, 26, 10, 0)
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            status = evaluator.get_blocking_status(sample_domain_config)
+            assert "currently_blocked" in status
+            assert status["currently_blocked"] is False
+
+    def test_status_blocked_outside_hours(self, sample_domain_config):
+        """Test currently_blocked is True outside available hours."""
+        evaluator = ScheduleEvaluator()
+        # Wednesday at 20:00 (after 17:00)
+        mock_now = self._mock_datetime(2025, 11, 26, 20, 0)
+        with patch("nextdns_blocker.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = mock_now
+            status = evaluator.get_blocking_status(sample_domain_config)
+            assert status["currently_blocked"] is True
+
+    def test_status_with_unknown_domain(self):
+        """Test status with missing domain field."""
+        evaluator = ScheduleEvaluator()
+        config = {"schedule": None}
+        status = evaluator.get_blocking_status(config)
+        assert status["domain"] == "unknown"
+
+    def test_status_returns_dict(self, sample_domain_config):
+        """Test get_blocking_status returns a dictionary."""
+        evaluator = ScheduleEvaluator()
+        status = evaluator.get_blocking_status(sample_domain_config)
+        assert isinstance(status, dict)
+        assert len(status) == 3  # domain, currently_blocked, has_schedule

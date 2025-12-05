@@ -1,10 +1,10 @@
 """Common utilities shared between NextDNS Blocker modules."""
 
-import fcntl
 import logging
 import os
 import re
 import stat
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -12,6 +12,56 @@ from typing import Optional
 from platformdirs import user_data_dir
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# CROSS-PLATFORM FILE LOCKING
+# =============================================================================
+
+# File locking abstraction for cross-platform support
+try:
+    import fcntl
+
+    def _lock_file(f, exclusive: bool = True) -> None:
+        """Acquire file lock (Unix implementation)."""
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+
+    def _unlock_file(f) -> None:
+        """Release file lock (Unix implementation)."""
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    _HAS_FCNTL = True
+
+except ImportError:
+    # Windows fallback using msvcrt
+    try:
+        import msvcrt
+
+        def _lock_file(f, exclusive: bool = True) -> None:
+            """Acquire file lock (Windows implementation)."""
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+
+        def _unlock_file(f) -> None:
+            """Release file lock (Windows implementation)."""
+            try:
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass  # Already unlocked
+
+        _HAS_FCNTL = False
+
+    except ImportError:
+        # No locking available - use no-op functions
+        def _lock_file(f, exclusive: bool = True) -> None:
+            """No-op file lock (fallback when no locking available)."""
+            pass
+
+        def _unlock_file(f) -> None:
+            """No-op file unlock (fallback when no locking available)."""
+            pass
+
+        _HAS_FCNTL = False
+        logger.warning("File locking not available on this platform")
 
 
 # =============================================================================
@@ -32,10 +82,6 @@ def get_audit_log_file() -> Path:
     return get_log_dir() / "audit.log"
 
 
-# Keep legacy constants for backwards compatibility with tests
-# These are evaluated at import time but point to the same location
-LOG_DIR = get_log_dir()
-AUDIT_LOG_FILE = get_audit_log_file()
 
 # Secure file permissions (owner read/write only)
 SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600
@@ -228,11 +274,11 @@ def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
 
         # Write with exclusive lock to prevent corruption from concurrent writes
         with open(audit_file, "a") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            _lock_file(f, exclusive=True)
             try:
                 f.write(log_entry)
             finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                _unlock_file(f)
 
     except OSError as e:
         logger.debug(f"Failed to write audit log: {e}")
@@ -264,13 +310,13 @@ def write_secure_file(path: Path, content: str) -> None:
     try:
         f = os.fdopen(fd, "w")
         fd_owned = True  # os.fdopen now owns the fd, don't close manually
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        _lock_file(f, exclusive=True)
         try:
             f.write(content)
         finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            _unlock_file(f)
         f.close()
-    except Exception:
+    except OSError:
         if not fd_owned:
             os.close(fd)
         raise
@@ -291,10 +337,10 @@ def read_secure_file(path: Path) -> Optional[str]:
 
     try:
         with open(path) as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+            _lock_file(f, exclusive=False)
             try:
                 return f.read().strip()
             finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                _unlock_file(f)
     except OSError:
         return None
