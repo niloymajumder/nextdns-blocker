@@ -590,19 +590,13 @@ def load_config(config_dir: Optional[Path] = None) -> dict[str, Any]:
         raise ConfigurationError("Missing NEXTDNS_API_KEY in .env or environment")
 
     if not validate_api_key(config["api_key"]):
-        raise ConfigurationError(
-            "Invalid NEXTDNS_API_KEY format. "
-            "API key should be alphanumeric (with optional - or _) and at least 8 characters."
-        )
+        raise ConfigurationError("Invalid NEXTDNS_API_KEY format")
 
     if not config["profile_id"]:
         raise ConfigurationError("Missing NEXTDNS_PROFILE_ID in .env or environment")
 
     if not validate_profile_id(config["profile_id"]):
-        raise ConfigurationError(
-            "Invalid NEXTDNS_PROFILE_ID format. "
-            "Profile ID should be alphanumeric (4-30 characters)."
-        )
+        raise ConfigurationError("Invalid NEXTDNS_PROFILE_ID format")
 
     # Validate timezone early to fail fast
     try:

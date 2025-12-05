@@ -270,8 +270,8 @@ The application also validates:
 
 1. Check the current time matches your schedule
 2. Verify timezone in `.env` is correct
-3. Run `./blocker.bin status` to see current state
-4. Check logs: `tail -f ~/.local/share/nextdns-audit/logs/app.log`
+3. Run `nextdns-blocker status` to see current state
+4. Check logs: `tail -f ~/.local/share/nextdns-blocker/logs/app.log`
 
 ### Invalid JSON
 
@@ -287,5 +287,5 @@ Use [jsonlint.com](https://jsonlint.com) to validate.
 Changes take effect on the next sync (every 2 minutes). To force:
 
 ```bash
-./blocker.bin sync
+nextdns-blocker sync
 ```

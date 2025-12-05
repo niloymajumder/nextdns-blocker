@@ -362,7 +362,8 @@ class TestStatusCommand:
 class TestHealthCommand:
     """Tests for health CLI command."""
 
-    def test_health_all_ok(self, runner, mock_pause_file, tmp_path):
+    @patch("nextdns_blocker.cli.NextDNSClient")
+    def test_health_all_ok(self, mock_client_cls, runner, mock_pause_file, tmp_path):
         """Test health command when everything is healthy."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
@@ -371,17 +372,17 @@ class TestHealthCommand:
             '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
-        with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
-            mock_client = mock_client_cls.return_value
-            mock_client.get_denylist.return_value = []  # Successful API call
+        mock_client = mock_client_cls.return_value
+        mock_client.get_denylist.return_value = []  # Successful API call
 
-            with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
-                result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
+        with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
+            result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "HEALTHY" in result.output
 
-    def test_health_api_failure(self, runner, mock_pause_file, tmp_path):
+    @patch("nextdns_blocker.cli.NextDNSClient")
+    def test_health_api_failure(self, mock_client_cls, runner, mock_pause_file, tmp_path):
         """Test health command when API fails."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=badkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
@@ -390,12 +391,11 @@ class TestHealthCommand:
             '{"domains": [{"domain": "test.com", "schedule": null}], "allowlist": []}'
         )
 
-        with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
-            mock_client = mock_client_cls.return_value
-            mock_client.get_denylist.return_value = None  # API failure
+        mock_client = mock_client_cls.return_value
+        mock_client.get_denylist.return_value = None  # API failure
 
-            with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
-                result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
+        with patch("nextdns_blocker.cli.get_log_dir", return_value=mock_pause_file.parent):
+            result = runner.invoke(main, ["health", "--config-dir", str(tmp_path)])
 
         # API failure causes exit code 1
         assert result.exit_code == 1
@@ -581,27 +581,18 @@ class TestSyncWithDomainsUrl:
 class TestAllowCommand:
     """Tests for allow CLI command."""
 
-    @responses.activate
-    def test_allow_success(self, runner, mock_pause_file, tmp_path):
+    @patch("nextdns_blocker.cli.NextDNSClient")
+    @patch("nextdns_blocker.cli.audit_log")
+    def test_allow_success(self, mock_audit, mock_client_cls, runner, mock_pause_file, tmp_path):
         """Test successful allow command."""
-        responses.add(
-            responses.GET,
-            f"{API_URL}/profiles/testprofile/allowlist",
-            json={"data": []},
-            status=200,
-        )
-        responses.add(
-            responses.POST,
-            f"{API_URL}/profiles/testprofile/allowlist",
-            json={"success": True},
-            status=200,
-        )
-
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        with patch("nextdns_blocker.cli.audit_log"):
-            result = runner.invoke(main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)])
+        mock_client = mock_client_cls.return_value
+        mock_client.is_blocked.return_value = False
+        mock_client.allow.return_value = True
+
+        result = runner.invoke(main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "allowlist" in result.output.lower()

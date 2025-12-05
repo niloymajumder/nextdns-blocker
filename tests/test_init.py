@@ -22,47 +22,50 @@ from nextdns_blocker.init import (
 class TestValidateApiCredentials:
     """Tests for validate_api_credentials function."""
 
-    def test_valid_credentials(self):
+    @patch("requests.get")
+    def test_valid_credentials(self, mock_get):
         """Should return True for valid credentials."""
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_get.return_value = mock_response
 
-        with patch("nextdns_blocker.init.requests.get", return_value=mock_response):
-            valid, msg = validate_api_credentials("validkey123", "testprofile")
+        valid, msg = validate_api_credentials("validkey123", "testprofile")
 
         assert valid is True
         assert "valid" in msg.lower()
 
-    def test_invalid_api_key(self):
+    @patch("requests.get")
+    def test_invalid_api_key(self, mock_get):
         """Should return False for invalid API key."""
         mock_response = MagicMock()
         mock_response.status_code = 401
+        mock_get.return_value = mock_response
 
-        with patch("nextdns_blocker.init.requests.get", return_value=mock_response):
-            valid, msg = validate_api_credentials("invalidkey", "testprofile")
+        valid, msg = validate_api_credentials("invalidkey", "testprofile")
 
         assert valid is False
         assert "Invalid API key" in msg
 
-    def test_invalid_profile_id(self):
+    @patch("requests.get")
+    def test_invalid_profile_id(self, mock_get):
         """Should return False for invalid profile ID."""
         mock_response = MagicMock()
         mock_response.status_code = 404
+        mock_get.return_value = mock_response
 
-        with patch("nextdns_blocker.init.requests.get", return_value=mock_response):
-            valid, msg = validate_api_credentials("validkey123", "badprofile")
+        valid, msg = validate_api_credentials("validkey123", "badprofile")
 
         assert valid is False
         assert "not found" in msg.lower()
 
-    def test_connection_timeout(self):
+    @patch("requests.get")
+    def test_connection_timeout(self, mock_get):
         """Should handle connection timeout."""
         import requests as req
 
-        with patch(
-            "nextdns_blocker.init.requests.get", side_effect=req.exceptions.Timeout("timeout")
-        ):
-            valid, msg = validate_api_credentials("testkey12345", "testprofile")
+        mock_get.side_effect = req.exceptions.Timeout("timeout")
+
+        valid, msg = validate_api_credentials("testkey12345", "testprofile")
 
         assert valid is False
         assert "timeout" in msg.lower()
@@ -320,38 +323,40 @@ class TestInitCommand:
 class TestInteractiveWizard:
     """Tests for interactive wizard flow."""
 
-    def test_wizard_creates_files(self, tmp_path):
+    @patch("requests.get")
+    def test_wizard_creates_files(self, mock_get, tmp_path):
         """Should create .env and optionally domains.json."""
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_get.return_value = mock_response
 
-        # Mock click prompts and requests
-        with patch("nextdns_blocker.init.requests.get", return_value=mock_response):
-            with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-                with patch("nextdns_blocker.init.click.confirm", return_value=True):
-                    # Set up prompt responses
-                    mock_prompt.side_effect = [
-                        "testapikey123",  # API key (must be at least 8 chars)
-                        "testprofile",  # Profile ID
-                        "UTC",  # Timezone
-                    ]
+        # Mock click prompts
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            with patch("nextdns_blocker.init.click.confirm", return_value=True):
+                # Set up prompt responses
+                mock_prompt.side_effect = [
+                    "testapikey123",  # API key (must be at least 8 chars)
+                    "testprofile",  # Profile ID
+                    "UTC",  # Timezone
+                ]
 
-                    result = run_interactive_wizard(tmp_path)
+                result = run_interactive_wizard(tmp_path)
 
         assert result is True
         assert (tmp_path / ".env").exists()
         assert (tmp_path / "domains.json").exists()
 
-    def test_wizard_invalid_credentials(self, tmp_path):
+    @patch("requests.get")
+    def test_wizard_invalid_credentials(self, mock_get, tmp_path):
         """Should fail with invalid credentials."""
         mock_response = MagicMock()
         mock_response.status_code = 401
+        mock_get.return_value = mock_response
 
-        with patch("nextdns_blocker.init.requests.get", return_value=mock_response):
-            with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-                mock_prompt.side_effect = ["badkey12345", "badprofile", "UTC"]
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            mock_prompt.side_effect = ["badkey12345", "badprofile", "UTC"]
 
-                result = run_interactive_wizard(tmp_path)
+            result = run_interactive_wizard(tmp_path)
 
         assert result is False
 
@@ -373,17 +378,18 @@ class TestInteractiveWizard:
 
         assert result is False
 
-    def test_wizard_skips_domains_creation(self, tmp_path):
+    @patch("requests.get")
+    def test_wizard_skips_domains_creation(self, mock_get, tmp_path):
         """Should skip domains.json when user declines."""
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_get.return_value = mock_response
 
-        with patch("nextdns_blocker.init.requests.get", return_value=mock_response):
-            with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
-                with patch("nextdns_blocker.init.click.confirm", return_value=False):
-                    mock_prompt.side_effect = ["testapikey123", "testprofile", "UTC"]
+        with patch("nextdns_blocker.init.click.prompt") as mock_prompt:
+            with patch("nextdns_blocker.init.click.confirm", return_value=False):
+                mock_prompt.side_effect = ["testapikey123", "testprofile", "UTC"]
 
-                    result = run_interactive_wizard(tmp_path)
+                result = run_interactive_wizard(tmp_path)
 
         assert result is True
         assert (tmp_path / ".env").exists()

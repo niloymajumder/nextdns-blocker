@@ -352,21 +352,21 @@ class TestAllowCommand:
         """Create Click CLI test runner."""
         return CliRunner()
 
-    def test_allow_success(self, runner, tmp_path):
+    @patch("nextdns_blocker.cli.NextDNSClient")
+    @patch("nextdns_blocker.cli.audit_log")
+    def test_allow_success(self, mock_audit, mock_client_cls, runner, tmp_path):
         """Test successful allow command."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
-            mock_client = mock_client_cls.return_value
-            mock_client.find_in_allowlist.return_value = None
-            mock_client.allow.return_value = True
-            mock_client.is_blocked.return_value = False
+        mock_client = mock_client_cls.return_value
+        mock_client.find_in_allowlist.return_value = None
+        mock_client.allow.return_value = True
+        mock_client.is_blocked.return_value = False
 
-            with patch("nextdns_blocker.cli.audit_log"):
-                result = runner.invoke(
-                    main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)]
-                )
+        result = runner.invoke(
+            main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)]
+        )
 
         assert result.exit_code == 0
         assert "allowlist" in result.output.lower()
@@ -380,21 +380,21 @@ class TestAllowCommand:
         assert result.exit_code == 1
         assert "Invalid domain" in result.output
 
-    def test_allow_warns_if_in_denylist(self, runner, tmp_path):
+    @patch("nextdns_blocker.cli.NextDNSClient")
+    @patch("nextdns_blocker.cli.audit_log")
+    def test_allow_warns_if_in_denylist(self, mock_audit, mock_client_cls, runner, tmp_path):
         """Test allow warns if domain is in denylist."""
         env_file = tmp_path / ".env"
         env_file.write_text("NEXTDNS_API_KEY=testkey12345\nNEXTDNS_PROFILE_ID=testprofile\n")
 
-        with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
-            mock_client = mock_client_cls.return_value
-            mock_client.find_in_allowlist.return_value = None
-            mock_client.allow.return_value = True
-            mock_client.is_blocked.return_value = True  # Domain IS in denylist
+        mock_client = mock_client_cls.return_value
+        mock_client.find_in_allowlist.return_value = None
+        mock_client.allow.return_value = True
+        mock_client.is_blocked.return_value = True  # Domain IS in denylist
 
-            with patch("nextdns_blocker.cli.audit_log"):
-                result = runner.invoke(
-                    main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)]
-                )
+        result = runner.invoke(
+            main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)]
+        )
 
         assert result.exit_code == 0
         assert "Warning" in result.output or "warning" in result.output.lower()

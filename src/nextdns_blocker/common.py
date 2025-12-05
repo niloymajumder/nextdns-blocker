@@ -45,8 +45,12 @@ except ImportError:
             """Release file lock (Windows implementation)."""
             try:
                 msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-            except OSError:
-                pass  # Already unlocked
+            except OSError as e:
+                # errno 22 = EINVAL (already unlocked or invalid)
+                # errno 9 = EBADF (bad file descriptor)
+                if e.errno not in (9, 22):
+                    logger.warning(f"Unexpected error unlocking file: {e}")
+                # Otherwise silently ignore - file already unlocked or closed
 
         _HAS_FCNTL = False
 

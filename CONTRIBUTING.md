@@ -28,12 +28,15 @@ Thank you for your interest in contributing! This guide will help you get starte
 git clone https://github.com/YOUR_USERNAME/nextdns-blocker.git
 cd nextdns-blocker
 
-# Install dependencies
-pip3 install -r requirements.txt
-pip3 install -r requirements-dev.txt
+# Install in development mode with dev dependencies
+pip3 install -e ".[dev]"
 
 # Run tests
 pytest tests/ -v
+
+# Run linting
+ruff check .
+black --check .
 ```
 
 #### Making Changes
@@ -70,10 +73,11 @@ Use conventional commits:
 
 #### Code Style
 
-- Follow PEP 8 guidelines
-- Use type hints where possible
+- Follow PEP 8 guidelines (enforced by `ruff` and `black`)
+- Use type hints for all function signatures
 - Keep functions small and focused
 - Add docstrings for public functions
+- Run `ruff check . && black .` before committing
 
 ### Documentation
 
@@ -86,21 +90,35 @@ Improvements to documentation are always welcome:
 
 ```
 nextdns-blocker/
-├── nextdns_blocker.py   # Main application
-├── watchdog.py          # Cron protection
-├── common.py            # Shared utilities (logging, file ops)
-├── tests/               # Test suite (287 tests, 97% coverage)
-│   ├── conftest.py      # Shared pytest fixtures
-│   ├── test_client.py   # API client tests
-│   ├── test_schedule.py # Schedule logic tests
-│   ├── test_validation.py # Input validation tests
+├── src/
+│   └── nextdns_blocker/      # Main package
+│       ├── __init__.py       # Package initialization and version
+│       ├── __main__.py       # Entry point for python -m
+│       ├── cli.py            # Click CLI commands
+│       ├── client.py         # NextDNS API client
+│       ├── common.py         # Shared utilities (logging, file ops)
+│       ├── config.py         # Configuration loading
+│       ├── exceptions.py     # Custom exception classes
+│       ├── init.py           # Interactive setup wizard
+│       ├── scheduler.py      # Schedule evaluation logic
+│       └── watchdog.py       # Cron protection
+├── tests/                    # Test suite (379 tests)
+│   ├── conftest.py           # Shared pytest fixtures
+│   ├── test_allowlist.py     # Allowlist feature tests
+│   ├── test_cli_commands.py  # CLI command tests
+│   ├── test_client.py        # API client tests
 │   ├── test_config_loading.py # Config loading tests
-│   ├── test_cli_commands.py # CLI command tests
+│   ├── test_init.py          # Init wizard tests
 │   ├── test_pause_protected.py # Pause/protected domain tests
-│   └── test_watchdog.py # Watchdog tests
-├── domains.json         # Domain configuration
-├── domains.json.example # Example configuration
-└── .env                 # Credentials (not in repo)
+│   ├── test_remote_domains.py # Remote domains tests
+│   ├── test_schedule.py      # Schedule logic tests
+│   ├── test_validation.py    # Input validation tests
+│   └── test_watchdog.py      # Watchdog tests
+├── pyproject.toml            # Package configuration
+├── domains.json.example      # Example domain configuration
+├── .env.example              # Example environment configuration
+├── Dockerfile                # Container image
+└── docker-compose.yml        # Docker Compose configuration
 ```
 
 ## Getting Help

@@ -148,8 +148,20 @@ class DomainCache:
         """
         Check if domain is in cache.
 
+        This method uses a 3-state return to distinguish between:
+        - True: Domain is definitely in the cached list
+        - False: Domain is definitely NOT in the cached list
+        - None: Cache is expired/invalid, lookup result is unknown
+
+        This allows callers to handle cache misses appropriately (e.g., by
+        fetching fresh data from the API when None is returned).
+
+        Args:
+            domain: Domain name to check
+
         Returns:
-            True/False if cache is valid, None if cache is invalid
+            True if domain is in cache, False if not in cache,
+            None if cache is invalid/expired and lookup cannot be performed
         """
         with self._lock:
             if self._data is None or (datetime.now().timestamp() - self._timestamp) >= self.ttl:

@@ -87,17 +87,37 @@ class ScheduleEvaluator:
 
     def _check_overnight_yesterday(self, now: datetime, schedule: dict[str, Any]) -> bool:
         """
-        Check if we're in an overnight schedule from yesterday.
+        Check if current time falls within an overnight schedule that started yesterday.
 
-        For example, if it's Saturday 01:00 and Friday had 22:00-02:00 schedule,
-        we should check if we're in that overnight window.
+        Overnight schedules are time ranges where the end time is before the start time,
+        indicating the range spans midnight. For example:
+        - Schedule: Friday 22:00 - 02:00
+        - This means Friday 22:00 to Saturday 02:00
+
+        When it's Saturday 01:00, we need to check if Friday had an overnight schedule
+        that extends into Saturday morning.
+
+        Algorithm:
+        1. Get yesterday's day name (e.g., if today is Saturday, yesterday is Friday)
+        2. For each schedule block that includes yesterday:
+           a. Check if any time range is an overnight range (start > end)
+           b. If so, check if current time is in the "after midnight" portion (≤ end)
+        3. Return True if we're in any such overnight window
+
+        Example:
+            now = Saturday 01:00
+            schedule has Friday with 22:00-02:00
+            → yesterday_day = "friday"
+            → start=22:00, end=02:00, start > end (overnight)
+            → current_time=01:00 ≤ end=02:00
+            → Return True (still in Friday's window)
 
         Args:
-            now: Current datetime
-            schedule: Schedule configuration
+            now: Current datetime with timezone
+            schedule: Schedule configuration containing 'available_hours'
 
         Returns:
-            True if in yesterday's overnight window
+            True if current time is within yesterday's overnight window
         """
         yesterday = now - timedelta(days=1)
         yesterday_day = list(DAYS_MAP.keys())[yesterday.weekday()]
@@ -112,9 +132,9 @@ class ScheduleEvaluator:
                 start = self.parse_time(time_range["start"])
                 end = self.parse_time(time_range["end"])
 
-                # Only check overnight ranges
+                # Only check overnight ranges (where start > end indicates midnight crossing)
                 if start > end:
-                    # We're in the "after midnight" portion
+                    # Current time is in the "after midnight" portion if ≤ end
                     if current_time <= end:
                         return True
 

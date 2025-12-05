@@ -66,43 +66,53 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-def is_paused() -> bool:
-    """Check if blocking is currently paused."""
+def _get_pause_info() -> tuple[bool, Optional[datetime]]:
+    """
+    Get pause state information.
+
+    Returns:
+        Tuple of (is_paused, pause_until_datetime).
+        If not paused or error, returns (False, None).
+    """
     pause_file = get_pause_file()
     content = read_secure_file(pause_file)
     if not content:
-        return False
+        return False, None
 
     try:
         pause_until = datetime.fromisoformat(content)
         if datetime.now() < pause_until:
-            return True
+            return True, pause_until
         # Expired, clean up
         pause_file.unlink(missing_ok=True)
-        return False
+        return False, None
     except ValueError:
-        return False
+        # Invalid content, clean up
+        logger.warning(f"Invalid pause file content, removing: {content[:50]}")
+        pause_file.unlink(missing_ok=True)
+        return False, None
+
+
+def is_paused() -> bool:
+    """Check if blocking is currently paused."""
+    paused, _ = _get_pause_info()
+    return paused
 
 
 def get_pause_remaining() -> Optional[str]:
-    """Get remaining pause time as human-readable string."""
-    pause_file = get_pause_file()
-    content = read_secure_file(pause_file)
-    if not content:
+    """
+    Get remaining pause time as human-readable string.
+
+    Returns:
+        Human-readable remaining time, or None if not paused.
+    """
+    paused, pause_until = _get_pause_info()
+    if not paused or pause_until is None:
         return None
 
-    try:
-        pause_until = datetime.fromisoformat(content)
-        remaining = pause_until - datetime.now()
-
-        if remaining.total_seconds() <= 0:
-            pause_file.unlink(missing_ok=True)
-            return None
-
-        mins = int(remaining.total_seconds() // 60)
-        return f"{mins} min" if mins > 0 else "< 1 min"
-    except ValueError:
-        return None
+    remaining = pause_until - datetime.now()
+    mins = int(remaining.total_seconds() // 60)
+    return f"{mins} min" if mins > 0 else "< 1 min"
 
 
 def set_pause(minutes: int) -> datetime:
