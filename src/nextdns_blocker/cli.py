@@ -21,11 +21,13 @@ from .common import (
 )
 from .config import (
     DEFAULT_PAUSE_MINUTES,
+    get_config_dir,
     get_protected_domains,
     load_config,
     load_domains,
 )
 from .exceptions import ConfigurationError, DomainValidationError
+from .init import run_interactive_wizard, run_non_interactive
 from .scheduler import ScheduleEvaluator
 
 
@@ -134,6 +136,30 @@ def main(ctx: click.Context) -> None:
     """NextDNS Blocker - Domain blocking with per-domain scheduling."""
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
+
+
+@main.command()
+@click.option('--config-dir', type=click.Path(file_okay=False, path_type=Path),
+              help='Config directory (default: XDG config dir)')
+@click.option('--url', 'domains_url', help='URL for remote domains.json')
+@click.option('--non-interactive', is_flag=True,
+              help='Use environment variables instead of prompts')
+def init(config_dir: Optional[Path], domains_url: Optional[str], non_interactive: bool) -> None:
+    """Initialize NextDNS Blocker configuration.
+
+    Runs an interactive wizard to configure API credentials and create
+    the necessary configuration files.
+
+    Use --non-interactive for CI/CD environments (requires NEXTDNS_API_KEY
+    and NEXTDNS_PROFILE_ID environment variables).
+    """
+    if non_interactive:
+        success = run_non_interactive(config_dir, domains_url)
+    else:
+        success = run_interactive_wizard(config_dir, domains_url)
+
+    if not success:
+        sys.exit(1)
 
 
 @main.command()
