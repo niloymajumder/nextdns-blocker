@@ -7,12 +7,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from platformdirs import user_config_dir, user_data_dir
 
 # Timezone support: use zoneinfo (Python 3.9+)
 from zoneinfo import ZoneInfo
 
 from .common import (
-    LOG_DIR,
     VALID_DAYS,
     parse_env_value,
     safe_int,
@@ -27,12 +27,65 @@ from .exceptions import ConfigurationError
 # CONSTANTS
 # =============================================================================
 
+APP_NAME = "nextdns-blocker"
 DEFAULT_TIMEOUT = 10
 DEFAULT_RETRIES = 3
 DEFAULT_TIMEZONE = "UTC"
 DEFAULT_PAUSE_MINUTES = 30
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# XDG DIRECTORY FUNCTIONS
+# =============================================================================
+
+def get_config_dir(override: Optional[Path] = None) -> Path:
+    """
+    Get the configuration directory path.
+
+    Resolution order:
+    1. Override path if provided
+    2. Current working directory if .env or domains.json exists (backwards compatible)
+    3. XDG config directory (~/.config/nextdns-blocker on Linux,
+       ~/Library/Application Support/nextdns-blocker on macOS)
+
+    Args:
+        override: Optional path to use instead of auto-detection
+
+    Returns:
+        Path to the configuration directory
+    """
+    if override:
+        return Path(override)
+
+    # Backwards compatibility: check CWD for existing configs
+    cwd = Path.cwd()
+    if (cwd / '.env').exists() or (cwd / 'domains.json').exists():
+        return cwd
+
+    return Path(user_config_dir(APP_NAME))
+
+
+def get_data_dir() -> Path:
+    """
+    Get the data directory path for logs and state files.
+
+    Returns:
+        Path to the data directory (~/.local/share/nextdns-blocker on Linux,
+        ~/Library/Application Support/nextdns-blocker on macOS)
+    """
+    return Path(user_data_dir(APP_NAME))
+
+
+def get_log_dir() -> Path:
+    """
+    Get the log directory path.
+
+    Returns:
+        Path to the log directory (data_dir/logs)
+    """
+    return get_data_dir() / "logs"
 
 
 # =============================================================================

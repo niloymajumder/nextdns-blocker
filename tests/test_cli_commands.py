@@ -25,7 +25,7 @@ from nextdns_blocker.cli import (
     clear_pause,
     print_usage,
     main,
-    PAUSE_FILE,
+    get_pause_file,
 )
 from nextdns_blocker.client import NextDNSClient, API_URL
 from nextdns_blocker.scheduler import ScheduleEvaluator
@@ -34,8 +34,8 @@ from nextdns_blocker.common import (
     audit_log,
     write_secure_file,
     read_secure_file,
-    AUDIT_LOG_FILE,
-    LOG_DIR,
+    get_audit_log_file,
+    get_log_dir,
 )
 from nextdns_blocker.config import load_config, load_domains
 
@@ -50,10 +50,10 @@ def temp_log_dir():
 
 @pytest.fixture
 def mock_pause_file(temp_log_dir):
-    """Mock the PAUSE_FILE location."""
+    """Mock the pause file location by patching the getter function."""
     pause_file = temp_log_dir / ".paused"
-    with patch('nextdns_blocker.cli.PAUSE_FILE', pause_file):
-        with patch('nextdns_blocker.cli.LOG_DIR', temp_log_dir):
+    with patch('nextdns_blocker.cli.get_pause_file', return_value=pause_file):
+        with patch('nextdns_blocker.cli.get_log_dir', return_value=temp_log_dir):
             yield pause_file
 
 
@@ -406,15 +406,17 @@ class TestAuditLog:
     def test_audit_log_creates_file(self, temp_log_dir):
         """Test audit_log creates log file if not exists."""
         audit_file = temp_log_dir / "audit.log"
-        with patch('nextdns_blocker.common.AUDIT_LOG_FILE', audit_file):
-            audit_log("TEST_ACTION", "test detail")
+        with patch('nextdns_blocker.common.get_audit_log_file', return_value=audit_file):
+            with patch('nextdns_blocker.common.get_log_dir', return_value=temp_log_dir):
+                audit_log("TEST_ACTION", "test detail")
         assert audit_file.exists()
 
     def test_audit_log_writes_entry(self, temp_log_dir):
         """Test audit_log writes correct format."""
         audit_file = temp_log_dir / "audit.log"
-        with patch('nextdns_blocker.common.AUDIT_LOG_FILE', audit_file):
-            audit_log("BLOCK", "example.com")
+        with patch('nextdns_blocker.common.get_audit_log_file', return_value=audit_file):
+            with patch('nextdns_blocker.common.get_log_dir', return_value=temp_log_dir):
+                audit_log("BLOCK", "example.com")
         content = audit_file.read_text()
         assert "BLOCK" in content
         assert "example.com" in content
@@ -422,16 +424,18 @@ class TestAuditLog:
     def test_audit_log_with_prefix(self, temp_log_dir):
         """Test audit_log with prefix."""
         audit_file = temp_log_dir / "audit.log"
-        with patch('nextdns_blocker.common.AUDIT_LOG_FILE', audit_file):
-            audit_log("ACTION", "detail", prefix="WD")
+        with patch('nextdns_blocker.common.get_audit_log_file', return_value=audit_file):
+            with patch('nextdns_blocker.common.get_log_dir', return_value=temp_log_dir):
+                audit_log("ACTION", "detail", prefix="WD")
         content = audit_file.read_text()
         assert "WD" in content
 
     def test_audit_log_handles_error(self, temp_log_dir):
         """Test audit_log handles write errors gracefully."""
-        with patch('nextdns_blocker.common.AUDIT_LOG_FILE', Path("/nonexistent/path/audit.log")):
-            # Should not raise
-            audit_log("ACTION", "detail")
+        with patch('nextdns_blocker.common.get_audit_log_file', return_value=Path("/nonexistent/path/audit.log")):
+            with patch('nextdns_blocker.common.get_log_dir', return_value=Path("/nonexistent/path")):
+                # Should not raise
+                audit_log("ACTION", "detail")
 
 
 class TestWriteSecureFile:
@@ -856,7 +860,7 @@ class TestCmdHealth:
             'timezone': 'UTC'
         }
 
-        with patch('nextdns_blocker.cli.LOG_DIR', mock_pause_file.parent):
+        with patch('nextdns_blocker.cli.get_log_dir', return_value=mock_pause_file.parent):
             result = cmd_health(client, config)
 
         assert result == 0
@@ -882,7 +886,7 @@ class TestCmdHealth:
             'timezone': 'UTC'
         }
 
-        with patch('nextdns_blocker.cli.LOG_DIR', mock_pause_file.parent):
+        with patch('nextdns_blocker.cli.get_log_dir', return_value=mock_pause_file.parent):
             result = cmd_health(client, config)
 
         assert result == 1
@@ -911,7 +915,7 @@ class TestCmdHealth:
             'timezone': 'UTC'
         }
 
-        with patch('nextdns_blocker.cli.LOG_DIR', mock_pause_file.parent):
+        with patch('nextdns_blocker.cli.get_log_dir', return_value=mock_pause_file.parent):
             result = cmd_health(client, config)
 
         captured = capsys.readouterr()
@@ -935,7 +939,7 @@ class TestCmdHealth:
             'timezone': 'Invalid/Timezone'
         }
 
-        with patch('nextdns_blocker.cli.LOG_DIR', mock_pause_file.parent):
+        with patch('nextdns_blocker.cli.get_log_dir', return_value=mock_pause_file.parent):
             result = cmd_health(client, config)
 
         assert result == 1
@@ -948,7 +952,7 @@ class TestCmdStats:
 
     def test_stats_no_audit_file(self, temp_log_dir, capsys):
         """Test stats with no audit log file."""
-        with patch('nextdns_blocker.cli.AUDIT_LOG_FILE', temp_log_dir / "audit.log"):
+        with patch('nextdns_blocker.cli.get_audit_log_file', return_value=temp_log_dir / "audit.log"):
             result = cmd_stats()
 
         assert result == 0
@@ -966,7 +970,7 @@ class TestCmdStats:
             "2025-01-01 13:00:00 | PAUSE | 30 minutes\n"
         )
 
-        with patch('nextdns_blocker.cli.AUDIT_LOG_FILE', audit_file):
+        with patch('nextdns_blocker.cli.get_audit_log_file', return_value=audit_file):
             result = cmd_stats()
 
         assert result == 0
@@ -983,7 +987,7 @@ class TestGetStats:
 
     def test_get_stats_no_file(self, temp_log_dir):
         """Test get_stats when file doesn't exist."""
-        with patch('nextdns_blocker.cli.AUDIT_LOG_FILE', temp_log_dir / "nonexistent.log"):
+        with patch('nextdns_blocker.cli.get_audit_log_file', return_value=temp_log_dir / "nonexistent.log"):
             stats = get_stats()
 
         assert stats['total_blocks'] == 0
@@ -1002,7 +1006,7 @@ class TestGetStats:
             "2025-01-01 15:00:00 | PAUSE | 60\n"
         )
 
-        with patch('nextdns_blocker.cli.AUDIT_LOG_FILE', audit_file):
+        with patch('nextdns_blocker.cli.get_audit_log_file', return_value=audit_file):
             stats = get_stats()
 
         assert stats['total_blocks'] == 3
@@ -1032,7 +1036,7 @@ class TestMainHealthAndStats:
 
         with patch('nextdns_blocker.cli.load_config') as mock_config:
             with patch('nextdns_blocker.cli.load_domains') as mock_domains:
-                with patch('nextdns_blocker.cli.LOG_DIR', mock_pause_file.parent):
+                with patch('nextdns_blocker.cli.get_log_dir', return_value=mock_pause_file.parent):
                     mock_config.return_value = {
                         'api_key': 'test',
                         'profile_id': 'test_profile',
@@ -1049,7 +1053,7 @@ class TestMainHealthAndStats:
 
     def test_main_stats_command(self, runner, temp_log_dir):
         """Test main with stats command."""
-        with patch('nextdns_blocker.cli.AUDIT_LOG_FILE', temp_log_dir / "audit.log"):
+        with patch('nextdns_blocker.cli.get_audit_log_file', return_value=temp_log_dir / "audit.log"):
             result = runner.invoke(main, ['stats'])
 
         assert result.exit_code == 0

@@ -9,10 +9,9 @@ from typing import Optional
 import click
 
 from .common import (
-    AUDIT_LOG_FILE,
-    LOG_DIR,
     SECURE_FILE_MODE,
     audit_log as _base_audit_log,
+    get_log_dir,
     read_secure_file,
     write_secure_file,
 )
@@ -23,12 +22,30 @@ from .common import (
 # =============================================================================
 
 INSTALL_DIR = Path(__file__).parent.parent.parent.absolute()
-DISABLED_FILE = LOG_DIR / ".watchdog_disabled"
 SUBPROCESS_TIMEOUT = 60
 
-# Cron job definitions
-CRON_SYNC = f"*/2 * * * * cd {INSTALL_DIR} && nextdns-blocker sync >> {LOG_DIR}/cron.log 2>&1"
-CRON_WATCHDOG = f"* * * * * cd {INSTALL_DIR} && nextdns-blocker watchdog check >> {LOG_DIR}/wd.log 2>&1"
+
+def get_disabled_file() -> Path:
+    """Get the watchdog disabled state file path."""
+    return get_log_dir() / ".watchdog_disabled"
+
+
+def get_cron_sync() -> str:
+    """Get the sync cron job definition."""
+    log_dir = get_log_dir()
+    return f"*/2 * * * * cd {INSTALL_DIR} && nextdns-blocker sync >> {log_dir}/cron.log 2>&1"
+
+
+def get_cron_watchdog() -> str:
+    """Get the watchdog cron job definition."""
+    log_dir = get_log_dir()
+    return f"* * * * * cd {INSTALL_DIR} && nextdns-blocker watchdog check >> {log_dir}/wd.log 2>&1"
+
+
+# Keep legacy constants for backwards compatibility with tests
+DISABLED_FILE = get_disabled_file()
+CRON_SYNC = get_cron_sync()
+CRON_WATCHDOG = get_cron_watchdog()
 
 
 def audit_log(action: str, detail: str = "") -> None:

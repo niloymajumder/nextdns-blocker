@@ -11,10 +11,10 @@ import click
 from . import __version__
 from .client import NextDNSClient
 from .common import (
-    AUDIT_LOG_FILE,
-    LOG_DIR,
     audit_log,
     ensure_log_dir,
+    get_audit_log_file,
+    get_log_dir,
     read_secure_file,
     validate_domain,
     write_secure_file,
@@ -33,8 +33,14 @@ from .scheduler import ScheduleEvaluator
 # LOGGING SETUP
 # =============================================================================
 
-APP_LOG_FILE = LOG_DIR / "app.log"
-PAUSE_FILE = LOG_DIR / ".paused"
+def get_app_log_file() -> Path:
+    """Get the app log file path."""
+    return get_log_dir() / "app.log"
+
+
+def get_pause_file() -> Path:
+    """Get the pause state file path."""
+    return get_log_dir() / ".paused"
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -47,7 +53,7 @@ def setup_logging(verbose: bool = False) -> None:
         level=level,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(APP_LOG_FILE),
+            logging.FileHandler(get_app_log_file()),
             logging.StreamHandler()
         ]
     )
@@ -62,7 +68,8 @@ logger = logging.getLogger(__name__)
 
 def is_paused() -> bool:
     """Check if blocking is currently paused."""
-    content = read_secure_file(PAUSE_FILE)
+    pause_file = get_pause_file()
+    content = read_secure_file(pause_file)
     if not content:
         return False
 
@@ -71,7 +78,7 @@ def is_paused() -> bool:
         if datetime.now() < pause_until:
             return True
         # Expired, clean up
-        PAUSE_FILE.unlink(missing_ok=True)
+        pause_file.unlink(missing_ok=True)
         return False
     except ValueError:
         return False
@@ -79,7 +86,8 @@ def is_paused() -> bool:
 
 def get_pause_remaining() -> Optional[str]:
     """Get remaining pause time as human-readable string."""
-    content = read_secure_file(PAUSE_FILE)
+    pause_file = get_pause_file()
+    content = read_secure_file(pause_file)
     if not content:
         return None
 
@@ -88,7 +96,7 @@ def get_pause_remaining() -> Optional[str]:
         remaining = pause_until - datetime.now()
 
         if remaining.total_seconds() <= 0:
-            PAUSE_FILE.unlink(missing_ok=True)
+            pause_file.unlink(missing_ok=True)
             return None
 
         mins = int(remaining.total_seconds() // 60)
@@ -100,15 +108,16 @@ def get_pause_remaining() -> Optional[str]:
 def set_pause(minutes: int) -> datetime:
     """Set pause for specified minutes. Returns the pause end time."""
     pause_until = datetime.now().replace(microsecond=0) + timedelta(minutes=minutes)
-    write_secure_file(PAUSE_FILE, pause_until.isoformat())
+    write_secure_file(get_pause_file(), pause_until.isoformat())
     audit_log("PAUSE", f"{minutes} minutes until {pause_until.isoformat()}")
     return pause_until
 
 
 def clear_pause() -> bool:
     """Clear pause state. Returns True if was paused."""
-    if PAUSE_FILE.exists():
-        PAUSE_FILE.unlink(missing_ok=True)
+    pause_file = get_pause_file()
+    if pause_file.exists():
+        pause_file.unlink(missing_ok=True)
         audit_log("RESUME", "Manual resume")
         return True
     return False
@@ -452,8 +461,9 @@ def health(config_dir: Optional[Path]) -> None:
     checks_total += 1
     try:
         ensure_log_dir()
-        if LOG_DIR.exists() and LOG_DIR.is_dir():
-            click.echo(f"  [✓] Log directory: {LOG_DIR}")
+        log_dir = get_log_dir()
+        if log_dir.exists() and log_dir.is_dir():
+            click.echo(f"  [✓] Log directory: {log_dir}")
             checks_passed += 1
         else:
             click.echo(f"  [✗] Log directory not accessible")
@@ -475,7 +485,7 @@ def stats() -> None:
     click.echo("\n  Statistics")
     click.echo("  ----------")
 
-    audit_file = LOG_DIR / "audit.log"
+    audit_file = get_audit_log_file()
     if not audit_file.exists():
         click.echo("  No audit log found\n")
         return
@@ -847,11 +857,12 @@ def get_stats() -> Dict[str, Any]:
         'last_action': None
     }
 
-    if not AUDIT_LOG_FILE.exists():
+    audit_file = get_audit_log_file()
+    if not audit_file.exists():
         return stats
 
     try:
-        lines = AUDIT_LOG_FILE.read_text().strip().split('\n')
+        lines = audit_file.read_text().strip().split('\n')
         for line in lines:
             if '| BLOCK |' in line:
                 stats['total_blocks'] += 1
