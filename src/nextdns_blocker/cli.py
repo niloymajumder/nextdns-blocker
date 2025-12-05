@@ -595,7 +595,7 @@ def stats() -> None:
 
         click.echo(f"\n  Total entries: {len(lines)}\n")
 
-    except (OSError, IOError, ValueError) as e:
+    except (OSError, ValueError) as e:
         click.echo(f"  Error reading stats: {e}\n", err=True)
 
 

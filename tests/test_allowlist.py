@@ -364,9 +364,7 @@ class TestAllowCommand:
         mock_client.allow.return_value = True
         mock_client.is_blocked.return_value = False
 
-        result = runner.invoke(
-            main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)]
-        )
+        result = runner.invoke(main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "allowlist" in result.output.lower()
@@ -392,9 +390,7 @@ class TestAllowCommand:
         mock_client.allow.return_value = True
         mock_client.is_blocked.return_value = True  # Domain IS in denylist
 
-        result = runner.invoke(
-            main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)]
-        )
+        result = runner.invoke(main, ["allow", "aws.amazon.com", "--config-dir", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "Warning" in result.output or "warning" in result.output.lower()

@@ -129,7 +129,9 @@ class DomainCache:
     def is_valid(self) -> bool:
         """Check if cache is still valid."""
         with self._lock:
-            return self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl
+            return (
+                self._data is not None and (datetime.now().timestamp() - self._timestamp) < self.ttl
+            )
 
     def get(self) -> Optional[list[dict[str, Any]]]:
         """Get cached data if valid."""
@@ -243,7 +245,7 @@ class NextDNSClient:
             Delay in seconds
         """
         delay = BACKOFF_BASE * (2**attempt)
-        return min(delay, BACKOFF_MAX)
+        return float(min(delay, BACKOFF_MAX))
 
     def request(
         self, method: str, endpoint: str, data: Optional[dict[str, Any]] = None
@@ -286,7 +288,8 @@ class NextDNSClient:
 
                 # Parse JSON with error handling
                 try:
-                    return response.json()
+                    result: dict[str, Any] = response.json()
+                    return result
                 except json.JSONDecodeError as e:
                     logger.error(f"Invalid JSON response for {method} {endpoint}: {e}")
                     return None
@@ -381,7 +384,7 @@ class NextDNSClient:
             logger.warning("Failed to fetch denylist from API")
             return None
 
-        data = result.get("data", [])
+        data: list[dict[str, Any]] = result.get("data", [])
         self._cache.set(data)
         return data
 
@@ -523,7 +526,7 @@ class NextDNSClient:
             logger.warning("Failed to fetch allowlist from API")
             return None
 
-        data = result.get("data", [])
+        data: list[dict[str, Any]] = result.get("data", [])
         self._allowlist_cache.set(data)
         return data
 

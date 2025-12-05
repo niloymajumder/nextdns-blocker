@@ -1,6 +1,5 @@
 """Tests for the __main__.py entry point module."""
 
-import pytest
 from click.testing import CliRunner
 
 

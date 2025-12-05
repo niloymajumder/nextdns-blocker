@@ -4,10 +4,9 @@ import logging
 import os
 import re
 import stat
-import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import IO, Any, Optional
 
 from platformdirs import user_data_dir
 
@@ -22,11 +21,11 @@ logger = logging.getLogger(__name__)
 try:
     import fcntl
 
-    def _lock_file(f, exclusive: bool = True) -> None:
+    def _lock_file(f: IO[Any], exclusive: bool = True) -> None:
         """Acquire file lock (Unix implementation)."""
         fcntl.flock(f.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
 
-    def _unlock_file(f) -> None:
+    def _unlock_file(f: IO[Any]) -> None:
         """Release file lock (Unix implementation)."""
         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
@@ -37,14 +36,14 @@ except ImportError:
     try:
         import msvcrt
 
-        def _lock_file(f, exclusive: bool = True) -> None:
+        def _lock_file(f: IO[Any], exclusive: bool = True) -> None:
             """Acquire file lock (Windows implementation)."""
-            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
 
-        def _unlock_file(f) -> None:
+        def _unlock_file(f: IO[Any]) -> None:
             """Release file lock (Windows implementation)."""
             try:
-                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
             except OSError as e:
                 # errno 22 = EINVAL (already unlocked or invalid)
                 # errno 9 = EBADF (bad file descriptor)
@@ -56,11 +55,11 @@ except ImportError:
 
     except ImportError:
         # No locking available - use no-op functions
-        def _lock_file(f, exclusive: bool = True) -> None:
+        def _lock_file(f: IO[Any], exclusive: bool = True) -> None:
             """No-op file lock (fallback when no locking available)."""
             pass
 
-        def _unlock_file(f) -> None:
+        def _unlock_file(f: IO[Any]) -> None:
             """No-op file unlock (fallback when no locking available)."""
             pass
 
@@ -84,7 +83,6 @@ def get_log_dir() -> Path:
 def get_audit_log_file() -> Path:
     """Get the audit log file path."""
     return get_log_dir() / "audit.log"
-
 
 
 # Secure file permissions (owner read/write only)

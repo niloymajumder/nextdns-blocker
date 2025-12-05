@@ -44,8 +44,6 @@ def get_cron_watchdog() -> str:
     return f"* * * * * cd {install_dir} && nextdns-blocker watchdog check >> {log_file} 2>&1"
 
 
-
-
 def audit_log(action: str, detail: str = "") -> None:
     """Wrapper for audit_log with WD prefix."""
     _base_audit_log(action, detail, prefix="WD")

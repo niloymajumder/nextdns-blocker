@@ -164,7 +164,7 @@ def get_domains_cache_file() -> Path:
     return get_cache_dir() / DOMAINS_CACHE_FILE
 
 
-def get_cached_domains(max_age: int = DOMAINS_CACHE_TTL) -> Optional[dict[str, Any]]:
+def get_cached_domains(max_age: float = DOMAINS_CACHE_TTL) -> Optional[dict[str, Any]]:
     """
     Retrieve cached domains data if valid.
 
@@ -191,7 +191,8 @@ def get_cached_domains(max_age: int = DOMAINS_CACHE_TTL) -> Optional[dict[str, A
             return None
 
         logger.debug(f"Using cached domains (age: {age:.0f}s)")
-        return cache.get("data")
+        data: Optional[dict[str, Any]] = cache.get("data")
+        return data
 
     except (json.JSONDecodeError, OSError) as e:
         logger.warning(f"Failed to read cache: {e}")
@@ -309,8 +310,7 @@ def fetch_remote_domains(url: str, use_cache: bool = True) -> dict[str, Any]:
         # Verify hash if configured
         if hash_url and not verify_remote_domains_hash(response.content, hash_url):
             raise ConfigurationError(
-                "Remote domains hash verification failed. "
-                "Content may have been tampered with."
+                "Remote domains hash verification failed. " "Content may have been tampered with."
             )
 
         data = response.json()
@@ -424,7 +424,9 @@ def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
         return [f"'{domain}': available_hours must be a list"]
 
     # Collect all time ranges per day for overlap detection
-    day_time_ranges: dict[str, list[tuple[int, int, int]]] = {}  # day -> [(start_mins, end_mins, block_idx)]
+    day_time_ranges: dict[str, list[tuple[int, int, int]]] = (
+        {}
+    )  # day -> [(start_mins, end_mins, block_idx)]
 
     # Validate each schedule block
     for block_idx, block in enumerate(hours):

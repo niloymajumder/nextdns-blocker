@@ -409,7 +409,7 @@ pytest tests/ -v
 pytest tests/ --cov=nextdns_blocker --cov-report=html
 ```
 
-Current coverage: **82%** with **383 tests**.
+Current coverage: **85%** with **379 tests**.
 
 ### Code Quality
 
