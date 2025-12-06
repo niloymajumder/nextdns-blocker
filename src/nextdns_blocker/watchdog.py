@@ -1,7 +1,7 @@
 """Cron Watchdog - Monitors and restores cron jobs if deleted."""
 
 import logging
-import shlex
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION & CONSTANTS
 # =============================================================================
 
-INSTALL_DIR = Path(__file__).parent.parent.parent.absolute()
 SUBPROCESS_TIMEOUT = 60
 
 
@@ -28,20 +27,29 @@ def get_disabled_file() -> Path:
     return get_log_dir() / ".watchdog_disabled"
 
 
+def get_executable_path() -> str:
+    """Get the full path to the nextdns-blocker executable."""
+    exe_path = shutil.which("nextdns-blocker")
+    if exe_path:
+        return exe_path
+    # Fallback to sys.executable module invocation
+    return f"{sys.executable} -m nextdns_blocker"
+
+
 def get_cron_sync() -> str:
     """Get the sync cron job definition."""
     log_dir = get_log_dir()
-    install_dir = shlex.quote(str(INSTALL_DIR))
-    log_file = shlex.quote(str(log_dir / "cron.log"))
-    return f"*/2 * * * * cd {install_dir} && nextdns-blocker sync >> {log_file} 2>&1"
+    exe = get_executable_path()
+    log_file = str(log_dir / "cron.log")
+    return f'*/2 * * * * {exe} sync >> "{log_file}" 2>&1'
 
 
 def get_cron_watchdog() -> str:
     """Get the watchdog cron job definition."""
     log_dir = get_log_dir()
-    install_dir = shlex.quote(str(INSTALL_DIR))
-    log_file = shlex.quote(str(log_dir / "wd.log"))
-    return f"* * * * * cd {install_dir} && nextdns-blocker watchdog check >> {log_file} 2>&1"
+    exe = get_executable_path()
+    log_file = str(log_dir / "wd.log")
+    return f'* * * * * {exe} watchdog check >> "{log_file}" 2>&1'
 
 
 def audit_log(action: str, detail: str = "") -> None:
