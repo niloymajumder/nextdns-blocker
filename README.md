@@ -1,6 +1,6 @@
 # NextDNS Blocker
 
-[![PyPI version](https://badge.fury.io/py/nextdns-blocker.svg)](https://badge.fury.io/py/nextdns-blocker)
+[![PyPI version](https://img.shields.io/pypi/v/nextdns-blocker.svg)](https://pypi.org/project/nextdns-blocker/)
 [![Python versions](https://img.shields.io/pypi/pyversions/nextdns-blocker.svg)](https://pypi.org/project/nextdns-blocker/)
 [![CI](https://github.com/aristeoibarra/nextdns-blocker/actions/workflows/ci.yml/badge.svg)](https://github.com/aristeoibarra/nextdns-blocker/actions/workflows/ci.yml)
 
