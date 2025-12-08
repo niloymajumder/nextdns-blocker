@@ -689,9 +689,7 @@ class TestLaunchdPaths:
     def test_get_watchdog_plist_path(self):
         """Should return correct watchdog plist path."""
         result = watchdog.get_watchdog_plist_path()
-        expected = (
-            Path.home() / "Library" / "LaunchAgents" / "com.nextdns-blocker.watchdog.plist"
-        )
+        expected = Path.home() / "Library" / "LaunchAgents" / "com.nextdns-blocker.watchdog.plist"
         assert result == expected
 
 
@@ -1159,8 +1157,7 @@ class TestInstallLaunchdCleanup:
 
                             # Should have called unload for sync
                             unload_calls = [
-                                c for c in mock_run.call_args_list
-                                if "unload" in str(c)
+                                c for c in mock_run.call_args_list if "unload" in str(c)
                             ]
                             assert len(unload_calls) >= 1
                             assert result.exit_code == 1
@@ -1189,9 +1186,7 @@ class TestUninstallLaunchdFeedback:
         with patch.object(watchdog, "is_macos", return_value=True):
             with patch.object(watchdog, "get_sync_plist_path", return_value=sync_plist):
                 with patch.object(watchdog, "get_watchdog_plist_path", return_value=watchdog_plist):
-                    with patch.object(
-                        watchdog, "unload_launchd_job", side_effect=[False, True]
-                    ):
+                    with patch.object(watchdog, "unload_launchd_job", side_effect=[False, True]):
                         result = runner.invoke(watchdog.cmd_uninstall)
 
                         assert "warning" in result.output
@@ -1207,9 +1202,7 @@ class TestUninstallLaunchdFeedback:
         with patch.object(watchdog, "is_macos", return_value=True):
             with patch.object(watchdog, "get_sync_plist_path", return_value=sync_plist):
                 with patch.object(watchdog, "get_watchdog_plist_path", return_value=watchdog_plist):
-                    with patch.object(
-                        watchdog, "unload_launchd_job", return_value=False
-                    ):
+                    with patch.object(watchdog, "unload_launchd_job", return_value=False):
                         result = runner.invoke(watchdog.cmd_uninstall)
 
                         assert "warning" in result.output
