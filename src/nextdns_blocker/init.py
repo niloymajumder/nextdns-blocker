@@ -167,6 +167,185 @@ def create_sample_domains(config_dir: Path) -> Path:
 
 
 # =============================================================================
+# EXISTING CONFIGURATION DETECTION
+# =============================================================================
+
+
+def detect_existing_config(config_dir: Path) -> dict:
+    """
+    Detect existing domains configuration.
+
+    Returns:
+        Dict with keys:
+            - has_local: bool - True if domains.json exists locally
+            - has_url: bool - True if DOMAINS_URL is set in .env
+            - url: str|None - The DOMAINS_URL value if set
+            - local_path: Path - Path to local domains.json
+    """
+    env_file = config_dir / ".env"
+    domains_file = config_dir / "domains.json"
+
+    result = {
+        "has_local": domains_file.exists(),
+        "has_url": False,
+        "url": None,
+        "local_path": domains_file,
+    }
+
+    # Check .env for DOMAINS_URL
+    if env_file.exists():
+        try:
+            content = env_file.read_text()
+            for line in content.split("\n"):
+                line = line.strip()
+                if line.startswith("DOMAINS_URL=") and not line.startswith("#"):
+                    url_value = line.split("=", 1)[1].strip()
+                    # Remove quotes if present
+                    if url_value.startswith('"') and url_value.endswith('"'):
+                        url_value = url_value[1:-1]
+                    elif url_value.startswith("'") and url_value.endswith("'"):
+                        url_value = url_value[1:-1]
+                    if url_value:
+                        result["has_url"] = True
+                        result["url"] = url_value
+                    break
+        except OSError:
+            pass
+
+    return result
+
+
+def prompt_domains_migration(existing: dict) -> tuple[str, Optional[str]]:
+    """
+    Prompt user for domains configuration when existing config is detected.
+
+    Args:
+        existing: Dict from detect_existing_config()
+
+    Returns:
+        Tuple of (choice, url):
+            - choice: "local", "url", or "keep"
+            - url: The URL if choice is "url", None otherwise
+    """
+    click.echo()
+    click.echo(click.style("  Existing domains configuration detected:", fg="yellow"))
+
+    if existing["has_local"] and existing["has_url"]:
+        click.echo(f"    - Local file: {existing['local_path']}")
+        click.echo(f"    - Remote URL: {existing['url']}")
+        click.echo()
+        click.echo("  Options:")
+        click.echo("    [1] Keep remote URL (recommended)")
+        click.echo("    [2] Switch to local file (will remove URL from config)")
+        click.echo("    [3] Change to different URL")
+        click.echo("    [4] Keep both (URL takes priority)")
+
+        choice = click.prompt("  Choice", type=click.Choice(["1", "2", "3", "4"]), default="1")
+
+        if choice == "1":
+            return "keep_url", existing["url"]
+        elif choice == "2":
+            return "local", None
+        elif choice == "3":
+            new_url = click.prompt("  New URL")
+            if validate_url(new_url):
+                return "url", new_url
+            else:
+                click.echo(click.style("  Invalid URL, keeping current", fg="red"))
+                return "keep_url", existing["url"]
+        else:
+            return "both", existing["url"]
+
+    elif existing["has_local"]:
+        click.echo(f"    - Local file: {existing['local_path']}")
+        click.echo()
+        click.echo("  Options:")
+        click.echo("    [1] Keep local file")
+        click.echo("    [2] Switch to remote URL (will delete local file)")
+
+        choice = click.prompt("  Choice", type=click.Choice(["1", "2"]), default="1")
+
+        if choice == "1":
+            return "local", None
+        else:
+            new_url = click.prompt("  Enter URL")
+            if validate_url(new_url):
+                return "url", new_url
+            else:
+                click.echo(click.style("  Invalid URL, keeping local file", fg="red"))
+                return "local", None
+
+    elif existing["has_url"]:
+        click.echo(f"    - Remote URL: {existing['url']}")
+        click.echo()
+        click.echo("  Options:")
+        click.echo("    [1] Keep remote URL")
+        click.echo("    [2] Switch to local file (will remove URL from config)")
+        click.echo("    [3] Change to different URL")
+
+        choice = click.prompt("  Choice", type=click.Choice(["1", "2", "3"]), default="1")
+
+        if choice == "1":
+            return "keep_url", existing["url"]
+        elif choice == "2":
+            return "local", None
+        else:
+            new_url = click.prompt("  New URL")
+            if validate_url(new_url):
+                return "url", new_url
+            else:
+                click.echo(click.style("  Invalid URL, keeping current", fg="red"))
+                return "keep_url", existing["url"]
+
+    # No existing config
+    return "none", None
+
+
+def handle_domains_migration(
+    config_dir: Path, choice: str, url: Optional[str]
+) -> tuple[Optional[str], bool]:
+    """
+    Handle the domains migration based on user choice.
+
+    Args:
+        config_dir: Configuration directory
+        choice: User's choice ("local", "url", "keep_url", "both", "none")
+        url: URL if applicable
+
+    Returns:
+        Tuple of (domains_url, should_create_local):
+            - domains_url: URL to save in .env, or None
+            - should_create_local: True if should create/keep local domains.json
+    """
+    domains_file = config_dir / "domains.json"
+
+    if choice == "url":
+        # Switch to URL, delete local file if exists
+        if domains_file.exists():
+            try:
+                domains_file.unlink()
+                click.echo(f"  Deleted local file: {domains_file}")
+            except OSError as e:
+                click.echo(click.style(f"  Warning: Could not delete {domains_file}: {e}", fg="yellow"))
+        return url, False
+
+    elif choice == "local":
+        # Switch to local, URL will not be saved
+        return None, not domains_file.exists()
+
+    elif choice == "keep_url":
+        # Keep existing URL
+        return url, False
+
+    elif choice == "both":
+        # Keep both (URL takes priority in sync)
+        return url, False
+
+    else:  # "none" - no existing config
+        return None, False
+
+
+# =============================================================================
 # SCHEDULING INSTALLATION
 # =============================================================================
 
@@ -413,23 +592,7 @@ def run_interactive_wizard(
         click.echo("  See: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones\n")
         return False
 
-    # Prompt for optional DOMAINS_URL (only if not provided via --url)
-    if not domains_url:
-        click.echo()
-        click.echo("  Domains URL (optional, press Enter to skip)")
-        url_input = click.prompt("  URL", default="", show_default=False)
-        url_input = url_input.strip()
-
-        if url_input:
-            if validate_url(url_input):
-                domains_url = url_input
-            else:
-                click.echo(
-                    click.style("\n  Error: Invalid URL format (must be http/https)", fg="red")
-                )
-                return False
-
-    # Validate credentials
+    # Validate credentials first
     click.echo()
     click.echo("  Validating credentials... ", nl=False)
 
@@ -445,13 +608,55 @@ def run_interactive_wizard(
     # Determine config directory
     config_dir = get_config_dir(config_dir_override)
 
+    # Check for existing domains configuration
+    existing = detect_existing_config(config_dir)
+    should_create_local = False
+
+    if domains_url:
+        # URL provided via --url flag, use it directly
+        # If local file exists, ask if they want to delete it
+        if existing["has_local"]:
+            click.echo()
+            delete_local = click.confirm(
+                f"  Local domains.json exists. Delete it?",
+                default=True
+            )
+            if delete_local:
+                try:
+                    existing["local_path"].unlink()
+                    click.echo(f"  Deleted: {existing['local_path']}")
+                except OSError as e:
+                    click.echo(click.style(f"  Warning: Could not delete: {e}", fg="yellow"))
+    elif existing["has_local"] or existing["has_url"]:
+        # Existing configuration detected, show migration options
+        choice, url = prompt_domains_migration(existing)
+        domains_url, should_create_local = handle_domains_migration(config_dir, choice, url)
+    else:
+        # No existing config, prompt for new configuration
+        click.echo()
+        click.echo("  Domains URL (optional, press Enter to skip)")
+        url_input = click.prompt("  URL", default="", show_default=False)
+        url_input = url_input.strip()
+
+        if url_input:
+            if validate_url(url_input):
+                domains_url = url_input
+            else:
+                click.echo(
+                    click.style("\n  Error: Invalid URL format (must be http/https)", fg="red")
+                )
+                return False
+        else:
+            # No URL, will offer to create sample domains.json
+            should_create_local = True
+
     # Create .env file
     click.echo()
     env_file = create_env_file(config_dir, api_key, profile_id, timezone, domains_url)
     click.echo(f"  Configuration saved to: {env_file}")
 
-    # Offer to create sample domains.json
-    if not domains_url:
+    # Create sample domains.json if needed
+    if should_create_local and not (config_dir / "domains.json").exists():
         click.echo()
         create_sample = click.confirm("  Create sample domains.json?", default=True)
 
