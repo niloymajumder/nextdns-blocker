@@ -618,7 +618,7 @@ def update(yes: bool) -> None:
     # Fetch latest version from PyPI
     try:
         pypi_url = "https://pypi.org/pypi/nextdns-blocker/json"
-        with urllib.request.urlopen(pypi_url, timeout=10) as response:
+        with urllib.request.urlopen(pypi_url, timeout=10) as response:  # nosec B310
             data = json.loads(response.read().decode())
             latest_version = data["info"]["version"]
     except Exception as e:

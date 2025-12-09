@@ -422,9 +422,9 @@ def validate_domain_config(config: dict[str, Any], index: int) -> list[str]:
         return [f"'{domain}': available_hours must be a list"]
 
     # Collect all time ranges per day for overlap detection
-    day_time_ranges: dict[
-        str, list[tuple[int, int, int]]
-    ] = {}  # day -> [(start_mins, end_mins, block_idx)]
+    day_time_ranges: dict[str, list[tuple[int, int, int]]] = (
+        {}
+    )  # day -> [(start_mins, end_mins, block_idx)]
 
     # Validate each schedule block
     for block_idx, block in enumerate(hours):
