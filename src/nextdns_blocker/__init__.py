@@ -1,6 +1,6 @@
 """NextDNS Blocker - Automated domain blocking with per-domain scheduling."""
 
-__version__ = "5.0.0"
+__version__ = "5.1.0"
 
 from .client import NextDNSClient
 from .config import (
@@ -17,6 +17,7 @@ from .exceptions import (
     DomainValidationError,
     NextDNSBlockerError,
 )
+from .notifications import send_discord_notification
 from .scheduler import ScheduleEvaluator
 
 __all__ = [
@@ -33,4 +34,5 @@ __all__ = [
     "ConfigurationError",
     "DomainValidationError",
     "APIError",
+    "send_discord_notification",
 ]

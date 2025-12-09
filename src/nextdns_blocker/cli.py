@@ -28,6 +28,7 @@ from .config import (
 )
 from .exceptions import ConfigurationError, DomainValidationError
 from .init import run_interactive_wizard, run_non_interactive
+from .notifications import send_discord_notification
 from .scheduler import ScheduleEvaluator
 
 # =============================================================================
@@ -242,6 +243,7 @@ def unblock(domain: str, config_dir: Optional[Path]) -> None:
 
         if client.unblock(domain):
             audit_log("UNBLOCK", domain)
+            send_discord_notification(domain, "unblock")
             click.echo(f"\n  Unblocked: {domain}\n")
         else:
             click.echo(f"\n  Error: Failed to unblock '{domain}'\n", err=True)
@@ -310,6 +312,7 @@ def sync(
                 else:
                     if client.block(domain):
                         audit_log("BLOCK", domain)
+                        send_discord_notification(domain, "block")
                         blocked_count += 1
             elif not should_block and is_blocked:
                 # Don't unblock protected domains
@@ -323,6 +326,7 @@ def sync(
                 else:
                     if client.unblock(domain):
                         audit_log("UNBLOCK", domain)
+                        send_discord_notification(domain, "unblock")
                         unblocked_count += 1
 
         # Sync allowlist
@@ -597,6 +601,79 @@ def stats() -> None:
 
     except (OSError, ValueError) as e:
         click.echo(f"  Error reading stats: {e}\n", err=True)
+
+
+@main.command()
+@click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
+def update(yes: bool) -> None:
+    """Check for updates and upgrade to the latest version."""
+    import json
+    import subprocess
+    import urllib.request
+
+    click.echo("\n  Checking for updates...")
+
+    current_version = __version__
+
+    # Fetch latest version from PyPI
+    try:
+        pypi_url = "https://pypi.org/pypi/nextdns-blocker/json"
+        with urllib.request.urlopen(pypi_url, timeout=10) as response:  # nosec B310
+            data = json.loads(response.read().decode())
+            latest_version = data["info"]["version"]
+    except Exception as e:
+        click.echo(f"  Error checking PyPI: {e}\n", err=True)
+        sys.exit(1)
+
+    click.echo(f"  Current version: {current_version}")
+    click.echo(f"  Latest version:  {latest_version}")
+
+    # Compare versions
+    if current_version == latest_version:
+        click.echo("\n  You are already on the latest version.\n")
+        return
+
+    # Parse versions for comparison
+    def parse_version(v: str) -> tuple[int, ...]:
+        return tuple(int(x) for x in v.split("."))
+
+    try:
+        current_tuple = parse_version(current_version)
+        latest_tuple = parse_version(latest_version)
+    except ValueError:
+        # If parsing fails, just do string comparison
+        current_tuple = (0,)
+        latest_tuple = (1,)
+
+    if current_tuple >= latest_tuple:
+        click.echo("\n  You are already on the latest version.\n")
+        return
+
+    click.echo(f"\n  A new version is available: {latest_version}")
+
+    # Ask for confirmation unless --yes flag is provided
+    if not yes:
+        if not click.confirm("  Do you want to update?"):
+            click.echo("  Update cancelled.\n")
+            return
+
+    # Perform the update
+    click.echo("\n  Updating...")
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "nextdns-blocker"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            click.echo(f"  Successfully updated to version {latest_version}")
+            click.echo("  Please restart the application to use the new version.\n")
+        else:
+            click.echo(f"  Update failed: {result.stderr}\n", err=True)
+            sys.exit(1)
+    except Exception as e:
+        click.echo(f"  Update failed: {e}\n", err=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

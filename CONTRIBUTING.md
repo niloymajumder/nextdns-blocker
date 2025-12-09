@@ -21,31 +21,29 @@ Thank you for your interest in contributing! This guide will help you get starte
 
 ## Branch Strategy
 
-This project uses a three-tier branching model:
+This project uses a two-tier branching model:
 
 ```
-  feature/*          main              stage              prod
-      |                |                 |                  |
-      +--- PR -------->|                 |                  |
-                       +---- PR -------->|                  |
-                                         +---- PR + tag --->|
-                                                            |
-                                                       [PyPI Release]
+  feature/*          main                prod
+      |                |                   |
+      +--- PR -------->|                   |
+                       +---- PR + tag ---->|
+                                           |
+                                      [PyPI Release]
 ```
 
 ### Branch Overview
 
 | Branch | Purpose | Target for PRs |
 |--------|---------|----------------|
-| `prod` | Production releases (PyPI) | From `stage` only |
-| `stage` | Pre-release QA | From `main` |
+| `prod` | Production releases (PyPI) | From `main` only |
 | `main` | Daily development | Feature branches, forks |
 | `feature/*` | New features | PR to `main` |
 | `hotfix/*` | Critical fixes | PR to `prod` |
 
 ### For Contributors
 
-**All PRs should target `main`**, not `prod` or `stage`. The maintainers will promote changes through `stage` → `prod` when ready for release.
+**All PRs should target `main`**, not `prod`. The maintainers will promote changes to `prod` when ready for release.
 
 ### Code Contributions
 
