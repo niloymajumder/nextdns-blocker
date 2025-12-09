@@ -8,11 +8,13 @@ Automated system to control domain access with per-domain schedule configuration
 
 ## Features
 
+- **Cross-platform**: Native support for macOS (launchd) and Linux (cron)
 - **Per-domain scheduling**: Configure unique availability hours for each domain
 - **Flexible time ranges**: Multiple time windows per day, different schedules per weekday
 - **Protected domains**: Mark domains as protected to prevent accidental unblocking
 - **Pause/Resume**: Temporarily disable blocking without changing configuration
-- **Automatic synchronization**: Runs every 2 minutes via cron with watchdog protection
+- **Automatic synchronization**: Runs every 2 minutes with watchdog protection
+- **Discord notifications**: Real-time alerts for block/unblock events
 - **Timezone-aware**: Respects configured timezone for schedule evaluation
 - **Secure**: File permissions, input validation, and audit logging
 - **NextDNS API integration**: Works via NextDNS denylist
@@ -20,6 +22,7 @@ Automated system to control domain access with per-domain schedule configuration
 - **Smart caching**: Reduces API calls with intelligent denylist caching
 - **Rate limiting**: Built-in protection against API rate limits
 - **Exponential backoff**: Automatic retries with increasing delays on failures
+- **Self-update**: Built-in command to check and install updates
 
 ## Requirements
 
@@ -169,6 +172,12 @@ nextdns-blocker pause 60
 
 # Resume blocking immediately
 nextdns-blocker resume
+
+# Check for updates and upgrade
+nextdns-blocker update
+
+# Update without confirmation prompt
+nextdns-blocker update -y
 ```
 
 ### Watchdog Commands
@@ -224,6 +233,26 @@ crontab -l
 | `API_TIMEOUT` | No | `10` | API request timeout in seconds |
 | `API_RETRIES` | No | `3` | Number of retry attempts |
 | `DOMAINS_URL` | No | - | URL to fetch domains.json from |
+| `DISCORD_WEBHOOK_URL` | No | - | Discord webhook URL for notifications |
+| `DISCORD_NOTIFICATIONS_ENABLED` | No | `false` | Enable Discord notifications (`true`/`false`) |
+
+### Discord Notifications
+
+Get real-time alerts when domains are blocked or unblocked:
+
+1. Create a Discord webhook in your server (Server Settings → Integrations → Webhooks)
+2. Add to your `.env`:
+
+```bash
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+DISCORD_NOTIFICATIONS_ENABLED=true
+```
+
+Notifications show:
+- Domain name
+- Action (blocked/unblocked)
+- Timestamp
+- Color-coded embeds (red=block, green=unblock)
 
 ### Domain Schedules
 
@@ -423,6 +452,12 @@ The codebase follows these practices:
 ## Documentation
 
 - [SCHEDULE_GUIDE.md](SCHEDULE_GUIDE.md) - Complete schedule configuration guide with examples
+- [examples/](examples/) - Ready-to-use configuration templates:
+  - `minimal.json` - Quick-start templates
+  - `work-focus.json` - Productivity-focused rules
+  - `gaming.json` - Gaming platforms scheduling
+  - `social-media.json` - Social networks management
+  - `parental-control.json` - Protected content blocking
 - [domains.json.example](domains.json.example) - Example configuration file
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 

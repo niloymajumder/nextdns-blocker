@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2025-12-09
+
+### Added
+- **Cross-platform Support**: Full macOS and Linux support
+  - **launchd integration** for macOS (replaces cron on Darwin)
+  - Automatic platform detection (`is_macos()`)
+  - `generate_plist()`, `load_launchd_job()`, `unload_launchd_job()` functions
+  - LaunchAgents installed to `~/Library/LaunchAgents/`
+- **Discord Notifications**: Real-time alerts for block/unblock events
+  - New `notifications.py` module with webhook support
+  - Configure via `DISCORD_WEBHOOK_URL` and `DISCORD_NOTIFICATIONS_ENABLED`
+  - Rich embeds with color coding (red=block, green=unblock)
+- **Update Command**: `nextdns-blocker update` for quick version upgrades
+  - Checks PyPI for latest version
+  - Automatic upgrade via pip
+  - `-y/--yes` flag to skip confirmation
+- **Domains Migration Support**: Seamless config transitions
+  - Detects existing local/remote domains configuration
+  - Interactive wizard for migration choices
+  - `detect_existing_config()`, `prompt_domains_migration()` functions
+- **Unified Init Command**: `nextdns-blocker init` now includes:
+  - Scheduling setup (launchd/cron) automatically
+  - Initial sync after configuration
+  - Platform-appropriate job installation
+- **Example Configurations**: New `examples/` directory
+  - `minimal.json` - Quick-start templates
+  - `work-focus.json` - Productivity-focused rules
+  - `gaming.json` - Gaming platforms scheduling
+  - `social-media.json` - Social networks management
+  - `parental-control.json` - Protected content blocking
+  - Comprehensive README with schedule snippets
+
+### Changed
+- **Branch Strategy**: Simplified from 3-tier to 2-tier model
+  - Removed `stage` branch (now: `feature/* → main → prod`)
+  - Streamlined release process
+- **Docker**: Python base image upgraded from 3.12-alpine to 3.14-alpine
+- **CI**: Updated GitHub Actions (checkout v6, setup-python v6, artifacts v5/v6)
+- **Tests**: Added mocked sleep in retry tests for faster execution
+- Test count increased to 6,291 lines across all test files
+
+### Fixed
+- Scheduling setup wrapped in try-except for proper error handling
+- Code formatting applied consistently across modules
+
+## [5.0.2] - 2025-12-06
+
+### Fixed
+- Cron jobs now use full executable path instead of `cd` + command
+  - Prevents issues when PATH is not set correctly in cron environment
+- PyPI badge updated to shields.io for better reliability
+
 ## [5.0.1] - 2025-12-05
 
 ### Fixed
@@ -223,6 +275,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[5.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.0.2...v5.1.0
+[5.0.2]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.0.1...v5.0.2
+[5.0.1]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.0.0...v5.0.1
 [5.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v3.1.0...v4.0.0
 [3.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v3.0.0...v3.1.0
