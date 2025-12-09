@@ -1,6 +1,8 @@
 """Interactive initialization wizard for NextDNS Blocker."""
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -8,7 +10,7 @@ from zoneinfo import ZoneInfo
 import click
 import requests
 
-from .common import SECURE_FILE_MODE, validate_url
+from .common import SECURE_FILE_MODE, get_log_dir, validate_url
 from .config import get_config_dir
 
 # NextDNS API base URL for validation
@@ -164,6 +166,205 @@ def create_sample_domains(config_dir: Path) -> Path:
     return domains_file
 
 
+# =============================================================================
+# SCHEDULING INSTALLATION
+# =============================================================================
+
+
+def is_macos() -> bool:
+    """Check if running on macOS."""
+    return sys.platform == "darwin"
+
+
+def install_scheduling() -> tuple[bool, str]:
+    """
+    Install scheduling jobs (launchd on macOS, cron on Linux).
+
+    Returns:
+        Tuple of (success, message)
+    """
+    if is_macos():
+        return _install_launchd()
+    else:
+        return _install_cron()
+
+
+def _install_launchd() -> tuple[bool, str]:
+    """Install launchd jobs for macOS."""
+    import plistlib
+    import shutil
+
+    # Get paths
+    launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
+    launch_agents_dir.mkdir(parents=True, exist_ok=True)
+
+    log_dir = get_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Find executable
+    exe_path = shutil.which("nextdns-blocker")
+    if exe_path:
+        exe_args = [exe_path]
+    else:
+        exe_args = [sys.executable, "-m", "nextdns_blocker"]
+
+    # Sync plist
+    sync_plist_path = launch_agents_dir / "com.nextdns-blocker.sync.plist"
+    sync_plist: dict = {
+        "Label": "com.nextdns-blocker.sync",
+        "ProgramArguments": exe_args + ["sync"],
+        "StartInterval": 120,  # 2 minutes
+        "RunAtLoad": True,
+        "KeepAlive": {"SuccessfulExit": False},
+        "StandardOutPath": str(log_dir / "sync.log"),
+        "StandardErrorPath": str(log_dir / "sync.log"),
+        "EnvironmentVariables": {
+            "PATH": "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
+        },
+    }
+
+    # Watchdog plist
+    watchdog_plist_path = launch_agents_dir / "com.nextdns-blocker.watchdog.plist"
+    watchdog_plist: dict = {
+        "Label": "com.nextdns-blocker.watchdog",
+        "ProgramArguments": exe_args + ["watchdog", "check"],
+        "StartInterval": 60,  # 1 minute
+        "RunAtLoad": True,
+        "KeepAlive": {"SuccessfulExit": False},
+        "StandardOutPath": str(log_dir / "watchdog.log"),
+        "StandardErrorPath": str(log_dir / "watchdog.log"),
+        "EnvironmentVariables": {
+            "PATH": "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
+        },
+    }
+
+    try:
+        # Write plist files
+        sync_plist_path.write_bytes(plistlib.dumps(sync_plist))
+        sync_plist_path.chmod(0o644)
+
+        watchdog_plist_path.write_bytes(plistlib.dumps(watchdog_plist))
+        watchdog_plist_path.chmod(0o644)
+
+        # Unload existing jobs (ignore errors)
+        subprocess.run(
+            ["launchctl", "unload", str(sync_plist_path)],
+            capture_output=True,
+            timeout=30,
+        )
+        subprocess.run(
+            ["launchctl", "unload", str(watchdog_plist_path)],
+            capture_output=True,
+            timeout=30,
+        )
+
+        # Load jobs
+        result_sync = subprocess.run(
+            ["launchctl", "load", str(sync_plist_path)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        result_wd = subprocess.run(
+            ["launchctl", "load", str(watchdog_plist_path)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result_sync.returncode == 0 and result_wd.returncode == 0:
+            return True, "launchd"
+        else:
+            return False, "Failed to load launchd jobs"
+
+    except Exception as e:
+        return False, f"launchd error: {e}"
+
+
+def _install_cron() -> tuple[bool, str]:
+    """Install cron jobs for Linux."""
+    import shutil
+
+    log_dir = get_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Find executable
+    exe_path = shutil.which("nextdns-blocker")
+    if exe_path:
+        exe = exe_path
+    else:
+        exe = f"{sys.executable} -m nextdns_blocker"
+
+    # Cron job definitions
+    sync_log = str(log_dir / "sync.log")
+    wd_log = str(log_dir / "watchdog.log")
+    cron_sync = f'*/2 * * * * {exe} sync >> "{sync_log}" 2>&1'
+    cron_wd = f'* * * * * {exe} watchdog check >> "{wd_log}" 2>&1'
+
+    try:
+        # Get current crontab
+        result = subprocess.run(
+            ["crontab", "-l"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        current_crontab = result.stdout if result.returncode == 0 else ""
+
+        # Remove existing nextdns-blocker entries
+        lines = [
+            line
+            for line in current_crontab.split("\n")
+            if "nextdns-blocker" not in line and line.strip()
+        ]
+
+        # Add new entries
+        lines.extend([cron_sync, cron_wd])
+        new_crontab = "\n".join(lines) + "\n"
+
+        # Set new crontab
+        result = subprocess.run(
+            ["crontab", "-"],
+            input=new_crontab,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
+
+        if result.returncode == 0:
+            return True, "cron"
+        else:
+            return False, "Failed to set crontab"
+
+    except Exception as e:
+        return False, f"cron error: {e}"
+
+
+def run_initial_sync() -> bool:
+    """Run initial sync command."""
+    import shutil
+
+    try:
+        exe_path = shutil.which("nextdns-blocker")
+        if exe_path:
+            result = subprocess.run(
+                [exe_path, "sync"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        else:
+            result = subprocess.run(
+                [sys.executable, "-m", "nextdns_blocker", "sync"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def run_interactive_wizard(
     config_dir_override: Optional[Path] = None, domains_url: Optional[str] = None
 ) -> bool:
@@ -258,11 +459,52 @@ def run_interactive_wizard(
             domains_file = create_sample_domains(config_dir)
             click.echo(f"  Created: {domains_file}")
 
+    # Install scheduling (launchd/cron)
+    click.echo()
+    click.echo("  Installing scheduling...")
+    sched_success, sched_type = install_scheduling()
+
+    if sched_success:
+        click.echo(click.style(f"  {sched_type} jobs installed", fg="green"))
+        click.echo("    sync:      every 2 min")
+        click.echo("    watchdog:  every 1 min")
+    else:
+        click.echo(click.style(f"  Warning: {sched_type}", fg="yellow"))
+        click.echo("  You can install manually with: nextdns-blocker watchdog install")
+
+    # Run initial sync
+    click.echo()
+    click.echo("  Running initial sync... ", nl=False)
+    if run_initial_sync():
+        click.echo(click.style("OK", fg="green"))
+    else:
+        click.echo(click.style("FAILED", fg="yellow"))
+        click.echo("  You can run manually: nextdns-blocker sync")
+
     # Success message
     click.echo()
     click.echo(click.style("  Setup complete!", fg="green", bold=True))
-    click.echo("  Run 'nextdns-blocker sync' to start blocking.")
     click.echo()
+    click.echo("  Commands:")
+    click.echo("    nextdns-blocker status    - Show blocking status")
+    click.echo("    nextdns-blocker sync      - Manual sync")
+    click.echo("    nextdns-blocker pause 30  - Pause for 30 min")
+    click.echo("    nextdns-blocker health    - Health check")
+    click.echo()
+    if is_macos():
+        click.echo("  Logs:")
+        click.echo(f"    {get_log_dir()}")
+        click.echo()
+        click.echo("  launchd:")
+        click.echo("    launchctl list | grep nextdns")
+        click.echo()
+    else:
+        click.echo("  Logs:")
+        click.echo(f"    {get_log_dir()}")
+        click.echo()
+        click.echo("  cron:")
+        click.echo("    crontab -l | grep nextdns")
+        click.echo()
 
     return True
 
@@ -315,5 +557,18 @@ def run_non_interactive(
     # Create .env file
     env_file = create_env_file(config_dir, api_key, profile_id, timezone, domains_url)
     click.echo(f"Configuration saved to: {env_file}")
+
+    # Install scheduling
+    sched_success, sched_type = install_scheduling()
+    if sched_success:
+        click.echo(f"Scheduling installed ({sched_type})")
+    else:
+        click.echo(f"Warning: {sched_type}", err=True)
+
+    # Run initial sync
+    if run_initial_sync():
+        click.echo("Initial sync completed")
+    else:
+        click.echo("Warning: Initial sync failed", err=True)
 
     return True
