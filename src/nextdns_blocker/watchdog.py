@@ -601,6 +601,46 @@ def _run_sync_after_restore() -> None:
 # =============================================================================
 
 
+def _escape_windows_path(path: str) -> str:
+    """
+    Escape a path for use in Windows Task Scheduler commands.
+
+    Handles paths with spaces, special characters, and non-ASCII characters
+    by properly quoting them for cmd.exe execution.
+
+    Args:
+        path: The path string to escape
+
+    Returns:
+        Properly escaped path string safe for schtasks /tr argument
+    """
+    # Replace any existing quotes to avoid injection
+    safe_path = path.replace('"', '""')
+    return safe_path
+
+
+def _build_task_command(exe: str, args: str, log_file: str) -> str:
+    """
+    Build a properly escaped command string for Windows Task Scheduler.
+
+    This handles paths with spaces, special characters, and ensures proper
+    quoting for cmd.exe execution context.
+
+    Args:
+        exe: Path to the executable
+        args: Command arguments (e.g., "sync" or "watchdog check")
+        log_file: Path to the log file for output redirection
+
+    Returns:
+        Properly formatted command string for schtasks /tr argument
+    """
+    safe_exe = _escape_windows_path(exe)
+    safe_log = _escape_windows_path(log_file)
+    # Use nested quotes: outer for schtasks, inner for cmd /c
+    # Format: cmd /c ""exe" args >> "logfile" 2>&1"
+    return f'cmd /c ""{safe_exe}" {args} >> "{safe_log}" 2>&1"'
+
+
 def _run_schtasks(
     args: list[str], timeout: int = SUBPROCESS_TIMEOUT
 ) -> subprocess.CompletedProcess[str]:
@@ -636,13 +676,14 @@ def _install_windows_tasks() -> None:
     _run_schtasks(["/delete", "/tn", WINDOWS_TASK_WATCHDOG_NAME, "/f"])
 
     # Create sync task (every 2 minutes)
+    sync_cmd = _build_task_command(exe, "sync", sync_log)
     result_sync = _run_schtasks(
         [
             "/create",
             "/tn",
             WINDOWS_TASK_SYNC_NAME,
             "/tr",
-            f'cmd /c ""{exe}" sync >> "{sync_log}" 2>&1"',
+            sync_cmd,
             "/sc",
             "minute",
             "/mo",
@@ -656,13 +697,14 @@ def _install_windows_tasks() -> None:
         sys.exit(1)
 
     # Create watchdog task (every 1 minute)
+    wd_cmd = _build_task_command(exe, "watchdog check", wd_log)
     result_wd = _run_schtasks(
         [
             "/create",
             "/tn",
             WINDOWS_TASK_WATCHDOG_NAME,
             "/tr",
-            f'cmd /c ""{exe}" watchdog check >> "{wd_log}" 2>&1"',
+            wd_cmd,
             "/sc",
             "minute",
             "/mo",
@@ -730,6 +772,7 @@ def _check_windows_tasks() -> None:
         log_dir.mkdir(parents=True, exist_ok=True)
         exe = get_executable_path()
         sync_log = str(log_dir / "sync.log")
+        sync_cmd = _build_task_command(exe, "sync", sync_log)
 
         result = _run_schtasks(
             [
@@ -737,7 +780,7 @@ def _check_windows_tasks() -> None:
                 "/tn",
                 WINDOWS_TASK_SYNC_NAME,
                 "/tr",
-                f'cmd /c ""{exe}" sync >> "{sync_log}" 2>&1"',
+                sync_cmd,
                 "/sc",
                 "minute",
                 "/mo",
@@ -759,6 +802,7 @@ def _check_windows_tasks() -> None:
         log_dir.mkdir(parents=True, exist_ok=True)
         exe = get_executable_path()
         wd_log = str(log_dir / "wd.log")
+        wd_cmd = _build_task_command(exe, "watchdog check", wd_log)
 
         result = _run_schtasks(
             [
@@ -766,7 +810,7 @@ def _check_windows_tasks() -> None:
                 "/tn",
                 WINDOWS_TASK_WATCHDOG_NAME,
                 "/tr",
-                f'cmd /c ""{exe}" watchdog check >> "{wd_log}" 2>&1"',
+                wd_cmd,
                 "/sc",
                 "minute",
                 "/mo",

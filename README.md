@@ -418,6 +418,58 @@ sudo service cron status || sudo service crond status
 nextdns-blocker watchdog status
 ```
 
+### Windows Troubleshooting
+
+**Task Scheduler not running?**
+```powershell
+# Check Task Scheduler status
+nextdns-blocker watchdog status
+
+# View tasks in Task Scheduler GUI
+taskschd.msc
+
+# List tasks via command line
+schtasks /query /tn "NextDNS-Blocker-Sync"
+schtasks /query /tn "NextDNS-Blocker-Watchdog"
+
+# Manually run sync task
+schtasks /run /tn "NextDNS-Blocker-Sync"
+```
+
+**Paths with spaces causing issues?**
+- The application handles paths with spaces automatically
+- If you see errors, check that your username doesn't contain special characters like `<`, `>`, `|`, `&`
+- Log files are stored in: `%LOCALAPPDATA%\nextdns-blocker\logs\`
+
+**PowerShell script won't run?**
+```powershell
+# Check execution policy
+Get-ExecutionPolicy
+
+# Allow scripts for current user (if needed)
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Run installer
+.\install.ps1
+```
+
+**View Windows logs**
+```powershell
+# Application log
+Get-Content "$env:LOCALAPPDATA\nextdns-blocker\logs\app.log" -Tail 50
+
+# Sync log
+Get-Content "$env:LOCALAPPDATA\nextdns-blocker\logs\sync.log" -Tail 50
+
+# Audit log
+Get-Content "$env:LOCALAPPDATA\nextdns-blocker\logs\audit.log" -Tail 50
+```
+
+**File permissions on Windows**
+- Windows uses ACLs instead of Unix file permissions (0o600)
+- Files are created with default user permissions
+- Configuration files in `%APPDATA%\nextdns-blocker\` are only accessible by the current user in typical configurations
+
 ## Uninstall
 
 ```bash
