@@ -931,6 +931,67 @@ class TestInstallLaunchd:
         assert success is False
         assert "launchd error" in result
 
+    def test_install_launchd_uses_pipx_fallback(self, tmp_path):
+        """Should use pipx executable when shutil.which fails but pipx exe exists."""
+        import plistlib
+
+        from nextdns_blocker.init import _install_launchd
+
+        launch_agents = tmp_path / "Library" / "LaunchAgents"
+        log_dir = tmp_path / "logs"
+
+        # Create pipx executable location
+        pipx_bin = tmp_path / ".local" / "bin"
+        pipx_bin.mkdir(parents=True)
+        pipx_exe = pipx_bin / "nextdns-blocker"
+        pipx_exe.touch()
+
+        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
+            with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
+                with patch("shutil.which", return_value=None):  # Simulate exe not in PATH
+                    with patch("subprocess.run") as mock_run:
+                        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                        success, result = _install_launchd()
+
+        assert success is True
+        assert result == "launchd"
+
+        # Verify plist uses pipx executable path
+        sync_plist_path = launch_agents / "com.nextdns-blocker.sync.plist"
+        assert sync_plist_path.exists()
+        plist_content = plistlib.loads(sync_plist_path.read_bytes())
+        assert plist_content["ProgramArguments"][0] == str(pipx_exe)
+
+    def test_install_launchd_includes_local_bin_in_path(self, tmp_path):
+        """Should include ~/.local/bin in PATH environment variable."""
+        import plistlib
+
+        from nextdns_blocker.init import _install_launchd
+
+        launch_agents = tmp_path / "Library" / "LaunchAgents"
+        log_dir = tmp_path / "logs"
+
+        with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
+            with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
+                with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
+                    with patch("subprocess.run") as mock_run:
+                        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                        success, result = _install_launchd()
+
+        assert success is True
+
+        # Verify PATH includes ~/.local/bin
+        sync_plist_path = launch_agents / "com.nextdns-blocker.sync.plist"
+        plist_content = plistlib.loads(sync_plist_path.read_bytes())
+        path_env = plist_content["EnvironmentVariables"]["PATH"]
+        assert "/.local/bin" in path_env
+
+        # Verify watchdog plist too
+        watchdog_plist_path = launch_agents / "com.nextdns-blocker.watchdog.plist"
+        watchdog_content = plistlib.loads(watchdog_plist_path.read_bytes())
+        watchdog_path = watchdog_content["EnvironmentVariables"]["PATH"]
+        assert "/.local/bin" in watchdog_path
+
 
 class TestInstallCron:
     """Tests for _install_cron function."""
