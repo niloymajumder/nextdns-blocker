@@ -304,7 +304,7 @@ def audit_log(action: str, detail: str = "", prefix: str = "") -> None:
         log_entry = " | ".join(parts) + "\n"
 
         # Write with exclusive lock to prevent corruption from concurrent writes
-        with open(audit_file, "a") as f:
+        with open(audit_file, "a", encoding="utf-8") as f:
             _lock_file(f, exclusive=True)
             try:
                 f.write(log_entry)
@@ -367,7 +367,7 @@ def read_secure_file(path: Path) -> Optional[str]:
         return None
 
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             _lock_file(f, exclusive=False)
             try:
                 return f.read().strip()

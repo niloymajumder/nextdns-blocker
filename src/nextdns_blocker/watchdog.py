@@ -606,7 +606,12 @@ def _escape_windows_path(path: str) -> str:
     Escape a path for use in Windows Task Scheduler commands.
 
     Handles paths with spaces, special characters, and non-ASCII characters
-    by properly quoting them for cmd.exe execution.
+    by properly quoting them for cmd.exe execution context.
+
+    Within double quotes in cmd.exe:
+    - Double quotes must be escaped as ""
+    - Percent signs must be doubled (%% instead of %)
+    - Other special characters (&, |, <, >, ^) are treated literally
 
     Args:
         path: The path string to escape
@@ -614,8 +619,10 @@ def _escape_windows_path(path: str) -> str:
     Returns:
         Properly escaped path string safe for schtasks /tr argument
     """
-    # Replace any existing quotes to avoid injection
-    safe_path = path.replace('"', '""')
+    # Escape percent signs first (must be doubled in cmd.exe)
+    safe_path = path.replace("%", "%%")
+    # Escape double quotes (standard Windows escaping within quotes)
+    safe_path = safe_path.replace('"', '""')
     return safe_path
 
 

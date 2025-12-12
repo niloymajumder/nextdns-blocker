@@ -510,6 +510,32 @@ def _install_cron() -> tuple[bool, str]:
         return False, f"cron error: {e}"
 
 
+def _escape_windows_path(path: str) -> str:
+    """
+    Escape a path for use in Windows Task Scheduler commands.
+
+    Within double quotes in cmd.exe:
+    - Percent signs must be doubled (%% instead of %)
+    - Double quotes must be escaped as ""
+    """
+    safe_path = path.replace("%", "%%")
+    safe_path = safe_path.replace('"', '""')
+    return safe_path
+
+
+def _build_task_command(exe: str, args: str, log_file: str) -> str:
+    """
+    Build a properly escaped command string for Windows Task Scheduler.
+
+    Handles paths with spaces, special characters, and ensures proper
+    quoting for cmd.exe execution context.
+    """
+    safe_exe = _escape_windows_path(exe)
+    safe_log = _escape_windows_path(log_file)
+    # Use nested quotes: outer for schtasks, inner for cmd /c
+    return f'cmd /c ""{safe_exe}" {args} >> "{safe_log}" 2>&1"'
+
+
 def _install_windows_task() -> tuple[bool, str]:
     """Install Windows Task Scheduler tasks."""
     try:
@@ -536,8 +562,8 @@ def _install_windows_task() -> tuple[bool, str]:
         )
 
         # Create sync task (every 2 minutes)
-        # Using XML for more control over the task
         sync_log = str(log_dir / "sync.log")
+        sync_cmd = _build_task_command(exe, "sync", sync_log)
         result_sync = subprocess.run(
             [
                 "schtasks",
@@ -545,7 +571,7 @@ def _install_windows_task() -> tuple[bool, str]:
                 "/tn",
                 sync_task_name,
                 "/tr",
-                f'cmd /c "{exe} sync >> "{sync_log}" 2>&1"',
+                sync_cmd,
                 "/sc",
                 "minute",
                 "/mo",
@@ -559,6 +585,7 @@ def _install_windows_task() -> tuple[bool, str]:
 
         # Create watchdog task (every 1 minute)
         wd_log = str(log_dir / "watchdog.log")
+        wd_cmd = _build_task_command(exe, "watchdog check", wd_log)
         result_wd = subprocess.run(
             [
                 "schtasks",
@@ -566,7 +593,7 @@ def _install_windows_task() -> tuple[bool, str]:
                 "/tn",
                 watchdog_task_name,
                 "/tr",
-                f'cmd /c "{exe} watchdog check >> "{wd_log}" 2>&1"',
+                wd_cmd,
                 "/sc",
                 "minute",
                 "/mo",
@@ -753,17 +780,19 @@ def run_interactive_wizard(
     click.echo("    nextdns-blocker pause 30  - Pause for 30 min")
     click.echo("    nextdns-blocker health    - Health check")
     click.echo()
+    click.echo("  Logs:")
+    click.echo(f"    {get_log_dir()}")
+    click.echo()
     if is_macos():
-        click.echo("  Logs:")
-        click.echo(f"    {get_log_dir()}")
-        click.echo()
         click.echo("  launchd:")
         click.echo("    launchctl list | grep nextdns")
         click.echo()
-    else:
-        click.echo("  Logs:")
-        click.echo(f"    {get_log_dir()}")
+    elif is_windows():
+        click.echo("  Task Scheduler:")
+        click.echo("    schtasks /query /tn NextDNS-Blocker-Sync")
+        click.echo("    schtasks /query /tn NextDNS-Blocker-Watchdog")
         click.echo()
+    else:
         click.echo("  cron:")
         click.echo("    crontab -l | grep nextdns")
         click.echo()
