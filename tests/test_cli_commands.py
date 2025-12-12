@@ -958,6 +958,77 @@ class TestStatsCommandEdgeCases:
         assert result.exit_code == 0
 
 
+class TestFixCommand:
+    """Tests for fix CLI command."""
+
+    def test_fix_help(self, runner):
+        """Should show help for fix command."""
+        result = runner.invoke(main, ["fix", "--help"])
+        assert result.exit_code == 0
+        assert "Fix common issues" in result.output
+
+    def test_fix_config_error(self, runner, tmp_path):
+        """Should fail when config is missing."""
+        with patch("nextdns_blocker.cli.load_config", side_effect=ConfigurationError("No config")):
+            result = runner.invoke(main, ["fix"])
+
+        assert result.exit_code == 1
+        assert "FAILED" in result.output
+        assert "init" in result.output
+
+    def test_fix_success_pipx(self, runner, tmp_path):
+        """Should complete successfully with pipx installation."""
+        # Create pipx executable
+        pipx_bin = tmp_path / ".local" / "bin"
+        pipx_bin.mkdir(parents=True)
+        pipx_exe = pipx_bin / "nextdns-blocker"
+        pipx_exe.touch()
+
+        mock_subprocess = MagicMock()
+        mock_subprocess.returncode = 0
+
+        with patch("nextdns_blocker.cli.load_config"):
+            with patch("shutil.which", return_value=None):
+                with patch("nextdns_blocker.cli.Path.home", return_value=tmp_path):
+                    with patch("nextdns_blocker.cli.is_macos", return_value=True):
+                        with patch("subprocess.run", return_value=mock_subprocess):
+                            result = runner.invoke(main, ["fix"])
+
+        assert result.exit_code == 0
+        assert "Fix complete" in result.output
+        assert "pipx" in result.output
+
+    def test_fix_success_system(self, runner, tmp_path):
+        """Should complete successfully with system installation."""
+        mock_subprocess = MagicMock()
+        mock_subprocess.returncode = 0
+
+        with patch("nextdns_blocker.cli.load_config"):
+            with patch("shutil.which", return_value="/usr/local/bin/nextdns-blocker"):
+                with patch("nextdns_blocker.cli.is_macos", return_value=True):
+                    with patch("subprocess.run", return_value=mock_subprocess):
+                        result = runner.invoke(main, ["fix"])
+
+        assert result.exit_code == 0
+        assert "Fix complete" in result.output
+        assert "system" in result.output
+
+    def test_fix_scheduler_failure(self, runner, tmp_path):
+        """Should fail when scheduler installation fails."""
+        mock_subprocess = MagicMock()
+        mock_subprocess.returncode = 1
+        mock_subprocess.stderr = "install error"
+
+        with patch("nextdns_blocker.cli.load_config"):
+            with patch("shutil.which", return_value="/usr/bin/nextdns-blocker"):
+                with patch("nextdns_blocker.cli.is_macos", return_value=True):
+                    with patch("subprocess.run", return_value=mock_subprocess):
+                        result = runner.invoke(main, ["fix"])
+
+        assert result.exit_code == 1
+        assert "Scheduler: FAILED" in result.output
+
+
 class TestSyncCommandEdgeCases:
     """Additional tests for sync command edge cases."""
 

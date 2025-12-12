@@ -633,6 +633,108 @@ def stats() -> None:
 
 
 @main.command()
+def fix() -> None:
+    """Fix common issues by reinstalling scheduler and running sync."""
+    import shutil
+    import subprocess
+
+    click.echo("\n  NextDNS Blocker Fix")
+    click.echo("  -------------------\n")
+
+    # Step 1: Verify config
+    click.echo("  [1/4] Checking configuration...")
+    try:
+        load_config()  # Validates config exists and is valid
+        click.echo("        Config: OK")
+    except ConfigurationError as e:
+        click.echo(f"        Config: FAILED - {e}")
+        click.echo("\n  Run 'nextdns-blocker init' to set up configuration.\n")
+        sys.exit(1)
+
+    # Step 2: Find executable
+    click.echo("  [2/4] Detecting installation...")
+    exe_path = shutil.which("nextdns-blocker")
+    if not exe_path:
+        pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
+        if pipx_exe.exists():
+            exe_path = str(pipx_exe)
+            click.echo("        Type: pipx")
+        else:
+            click.echo("        Type: module")
+    else:
+        if ".local/bin" in exe_path:
+            click.echo("        Type: pipx")
+        else:
+            click.echo("        Type: system")
+
+    # Step 3: Reinstall scheduler
+    click.echo("  [3/4] Reinstalling scheduler...")
+    try:
+        if is_macos():
+            # Uninstall
+            subprocess.run(
+                ["launchctl", "unload", str(Path.home() / "Library/LaunchAgents/com.nextdns-blocker.sync.plist")],
+                capture_output=True,
+            )
+            subprocess.run(
+                ["launchctl", "unload", str(Path.home() / "Library/LaunchAgents/com.nextdns-blocker.watchdog.plist")],
+                capture_output=True,
+            )
+
+        # Use the watchdog install command
+        if exe_path:
+            result = subprocess.run(
+                [exe_path, "watchdog", "install"],
+                capture_output=True,
+                text=True,
+            )
+        else:
+            result = subprocess.run(
+                [sys.executable, "-m", "nextdns_blocker", "watchdog", "install"],
+                capture_output=True,
+                text=True,
+            )
+
+        if result.returncode == 0:
+            click.echo("        Scheduler: OK")
+        else:
+            click.echo(f"        Scheduler: FAILED - {result.stderr}")
+            sys.exit(1)
+    except Exception as e:
+        click.echo(f"        Scheduler: FAILED - {e}")
+        sys.exit(1)
+
+    # Step 4: Run sync
+    click.echo("  [4/4] Running sync...")
+    try:
+        if exe_path:
+            result = subprocess.run(
+                [exe_path, "sync"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        else:
+            result = subprocess.run(
+                [sys.executable, "-m", "nextdns_blocker", "sync"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+        if result.returncode == 0:
+            click.echo("        Sync: OK")
+        else:
+            click.echo(f"        Sync: FAILED - {result.stderr}")
+    except subprocess.TimeoutExpired:
+        click.echo("        Sync: TIMEOUT")
+    except Exception as e:
+        click.echo(f"        Sync: FAILED - {e}")
+
+    click.echo("\n  Fix complete!\n")
+
+
+@main.command()
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompt")
 def update(yes: bool) -> None:
     """Check for updates and upgrade to the latest version."""
