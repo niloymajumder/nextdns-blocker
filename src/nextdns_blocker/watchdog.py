@@ -60,6 +60,13 @@ def get_executable_path() -> str:
     For launchd, use get_executable_args() instead.
     """
     exe_path = shutil.which("nextdns-blocker")
+
+    # Fallback: check pipx default location if not found in PATH
+    if not exe_path:
+        pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
+        if pipx_exe.exists():
+            exe_path = str(pipx_exe)
+
     if exe_path:
         return exe_path
     # Fallback to sys.executable module invocation
@@ -72,6 +79,13 @@ def get_executable_args() -> list[str]:
     Returns a list suitable for subprocess.run() and launchd ProgramArguments.
     """
     exe_path = shutil.which("nextdns-blocker")
+
+    # Fallback: check pipx default location if not found in PATH
+    if not exe_path:
+        pipx_exe = Path.home() / ".local" / "bin" / "nextdns-blocker"
+        if pipx_exe.exists():
+            exe_path = str(pipx_exe)
+
     if exe_path:
         return [exe_path]
     # Fallback to sys.executable module invocation
