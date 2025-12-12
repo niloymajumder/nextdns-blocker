@@ -358,6 +358,61 @@ class TestStatusCommand:
         assert result.exit_code == 0
         assert "ACTIVE" in result.output or "Pause" in result.output
 
+    def test_status_shows_scheduler_status_macos(self, runner, mock_pause_file, tmp_path):
+        """Test status command shows scheduler status on macOS."""
+        with patch("nextdns_blocker.cli.load_config") as mock_config:
+            with patch("nextdns_blocker.cli.load_domains") as mock_domains:
+                with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
+                    with patch("nextdns_blocker.cli.is_macos", return_value=True):
+                        with patch(
+                            "nextdns_blocker.cli.is_launchd_job_loaded", return_value=True
+                        ):
+                            mock_config.return_value = {
+                                "api_key": "test",
+                                "profile_id": "testprofile",
+                                "timeout": 10,
+                                "retries": 3,
+                                "timezone": "UTC",
+                                "script_dir": str(tmp_path),
+                            }
+                            mock_domains.return_value = ([], [])
+                            mock_client = MagicMock()
+                            mock_client_cls.return_value = mock_client
+
+                            result = runner.invoke(main, ["status"])
+
+        assert result.exit_code == 0
+        assert "Scheduler:" in result.output
+        assert "sync:" in result.output
+        assert "watchdog:" in result.output
+
+    def test_status_shows_scheduler_not_running(self, runner, mock_pause_file, tmp_path):
+        """Test status command shows scheduler not running."""
+        with patch("nextdns_blocker.cli.load_config") as mock_config:
+            with patch("nextdns_blocker.cli.load_domains") as mock_domains:
+                with patch("nextdns_blocker.cli.NextDNSClient") as mock_client_cls:
+                    with patch("nextdns_blocker.cli.is_macos", return_value=True):
+                        with patch(
+                            "nextdns_blocker.cli.is_launchd_job_loaded", return_value=False
+                        ):
+                            mock_config.return_value = {
+                                "api_key": "test",
+                                "profile_id": "testprofile",
+                                "timeout": 10,
+                                "retries": 3,
+                                "timezone": "UTC",
+                                "script_dir": str(tmp_path),
+                            }
+                            mock_domains.return_value = ([], [])
+                            mock_client = MagicMock()
+                            mock_client_cls.return_value = mock_client
+
+                            result = runner.invoke(main, ["status"])
+
+        assert result.exit_code == 0
+        assert "NOT RUNNING" in result.output
+        assert "watchdog install" in result.output
+
 
 class TestHealthCommand:
     """Tests for health CLI command."""

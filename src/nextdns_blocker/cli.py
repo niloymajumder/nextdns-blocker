@@ -30,6 +30,13 @@ from .exceptions import ConfigurationError, DomainValidationError
 from .init import run_interactive_wizard, run_non_interactive
 from .notifications import send_discord_notification
 from .scheduler import ScheduleEvaluator
+from .watchdog import (
+    LAUNCHD_SYNC_LABEL,
+    LAUNCHD_WATCHDOG_LABEL,
+    get_crontab,
+    is_launchd_job_loaded,
+    is_macos,
+)
 
 # =============================================================================
 # LOGGING SETUP
@@ -405,6 +412,28 @@ def status(config_dir: Optional[Path]) -> None:
                 is_allowed = client.is_allowed(domain)
                 status_icon = "✓" if is_allowed else "✗"
                 click.echo(f"    {status_icon} {domain}")
+
+        # Scheduler status
+        click.echo("\n  Scheduler:")
+        if is_macos():
+            sync_ok = is_launchd_job_loaded(LAUNCHD_SYNC_LABEL)
+            wd_ok = is_launchd_job_loaded(LAUNCHD_WATCHDOG_LABEL)
+            sync_status = "ok" if sync_ok else "NOT RUNNING"
+            wd_status = "ok" if wd_ok else "NOT RUNNING"
+            click.echo(f"    sync:     {sync_status}")
+            click.echo(f"    watchdog: {wd_status}")
+            if not sync_ok or not wd_ok:
+                click.echo("    Run: nextdns-blocker watchdog install")
+        else:
+            crontab = get_crontab()
+            has_sync = "nextdns-blocker" in crontab and "sync" in crontab
+            has_wd = "nextdns-blocker" in crontab and "watchdog" in crontab
+            sync_status = "ok" if has_sync else "NOT FOUND"
+            wd_status = "ok" if has_wd else "NOT FOUND"
+            click.echo(f"    sync:     {sync_status}")
+            click.echo(f"    watchdog: {wd_status}")
+            if not has_sync or not has_wd:
+                click.echo("    Run: nextdns-blocker watchdog install")
 
         click.echo()
 
