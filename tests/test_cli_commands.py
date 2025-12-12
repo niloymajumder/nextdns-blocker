@@ -1,5 +1,6 @@
 """Tests for CLI commands using Click CliRunner."""
 
+import sys
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,6 +24,10 @@ from nextdns_blocker.common import (
     write_secure_file,
 )
 from nextdns_blocker.exceptions import ConfigurationError, DomainValidationError
+
+# Helper for skipping Unix-specific tests on Windows
+is_windows = sys.platform == "win32"
+skip_on_windows = pytest.mark.skipif(is_windows, reason="Unix permissions not applicable on Windows")
 
 
 @pytest.fixture
@@ -563,6 +568,7 @@ class TestWriteSecureFile:
         assert test_file.exists()
         assert test_file.read_text() == "test content"
 
+    @skip_on_windows
     def test_write_secure_file_permissions(self, temp_log_dir):
         """Test write_secure_file sets secure permissions."""
         test_file = temp_log_dir / "test.txt"
@@ -987,8 +993,10 @@ class TestFixCommand:
             with patch("shutil.which", return_value=None):
                 with patch("nextdns_blocker.cli.Path.home", return_value=tmp_path):
                     with patch("nextdns_blocker.cli.is_macos", return_value=True):
-                        with patch("subprocess.run", return_value=mock_subprocess):
-                            result = runner.invoke(main, ["fix"])
+                        with patch("nextdns_blocker.cli.is_windows", return_value=False):
+                            with patch("nextdns_blocker.platform_utils.is_windows", return_value=False):
+                                with patch("subprocess.run", return_value=mock_subprocess):
+                                    result = runner.invoke(main, ["fix"])
 
         assert result.exit_code == 0
         assert "Fix complete" in result.output

@@ -1,6 +1,7 @@
 """Tests for init wizard functionality."""
 
 import os
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,6 +23,10 @@ from nextdns_blocker.init import (
     validate_timezone,
 )
 from nextdns_blocker.platform_utils import is_linux, is_macos, is_windows
+
+# Helper for skipping Unix-specific tests on Windows
+is_windows_platform = sys.platform == "win32"
+skip_on_windows = pytest.mark.skipif(is_windows_platform, reason="Unix permissions not applicable on Windows")
 
 
 class TestValidateApiCredentials:
@@ -135,6 +140,7 @@ class TestCreateEnvFile:
         assert env_file.exists()
         assert nested_dir.exists()
 
+    @skip_on_windows
     def test_secure_permissions(self, tmp_path):
         """Should create file with secure permissions (0o600)."""
         env_file = create_env_file(tmp_path, "key", "profile", "UTC")
@@ -835,9 +841,10 @@ class TestRunInitialSync:
 
         with patch("shutil.which", return_value=None):
             with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
-                with patch("subprocess.run") as mock_run:
-                    mock_run.return_value = MagicMock(returncode=0)
-                    result = run_initial_sync()
+                with patch("nextdns_blocker.platform_utils.is_windows", return_value=False):
+                    with patch("subprocess.run") as mock_run:
+                        mock_run.return_value = MagicMock(returncode=0)
+                        result = run_initial_sync()
 
         assert result is True
         call_args = mock_run.call_args[0][0]
@@ -990,9 +997,10 @@ class TestInstallLaunchd:
         with patch("nextdns_blocker.init.Path.home", return_value=tmp_path):
             with patch("nextdns_blocker.init.get_log_dir", return_value=log_dir):
                 with patch("shutil.which", return_value=None):  # Simulate exe not in PATH
-                    with patch("subprocess.run") as mock_run:
-                        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-                        success, result = _install_launchd()
+                    with patch("nextdns_blocker.platform_utils.is_windows", return_value=False):
+                        with patch("subprocess.run") as mock_run:
+                            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+                            success, result = _install_launchd()
 
         assert success is True
         assert result == "launchd"
@@ -1145,9 +1153,10 @@ class TestInstallScheduling:
         from nextdns_blocker.init import install_scheduling
 
         with patch("nextdns_blocker.init.is_macos", return_value=False):
-            with patch("nextdns_blocker.init._install_cron") as mock_cron:
-                mock_cron.return_value = (True, "cron")
-                success, result = install_scheduling()
+            with patch("nextdns_blocker.init.is_windows", return_value=False):
+                with patch("nextdns_blocker.init._install_cron") as mock_cron:
+                    mock_cron.return_value = (True, "cron")
+                    success, result = install_scheduling()
 
         assert success is True
         assert result == "cron"

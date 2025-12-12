@@ -14,6 +14,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from nextdns_blocker import watchdog
 
+# Helper for skipping Unix-specific tests on Windows
+is_windows = sys.platform == "win32"
+skip_on_windows = pytest.mark.skipif(is_windows, reason="Unix permissions not applicable on Windows")
+
 
 @pytest.fixture
 def temp_log_dir():
@@ -290,20 +294,22 @@ class TestCmdStatus:
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
 
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=crontab):
-                result = runner.invoke(watchdog.cmd_status)
-                assert result.exit_code == 0
-                assert "ok" in result.output
-                assert "active" in result.output
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=crontab):
+                    result = runner.invoke(watchdog.cmd_status)
+                    assert result.exit_code == 0
+                    assert "ok" in result.output
+                    assert "active" in result.output
 
     def test_cmd_status_missing_crons(self, runner, mock_disabled_file):
         """Should show missing status when cron jobs absent."""
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=""):
-                result = runner.invoke(watchdog.cmd_status)
-                assert result.exit_code == 0
-                assert "missing" in result.output
-                assert "compromised" in result.output
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=""):
+                    result = runner.invoke(watchdog.cmd_status)
+                    assert result.exit_code == 0
+                    assert "missing" in result.output
+                    assert "compromised" in result.output
 
     def test_cmd_status_disabled(self, runner, mock_disabled_file):
         """Should show disabled status when watchdog disabled."""
@@ -311,10 +317,11 @@ class TestCmdStatus:
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
 
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=crontab):
-                result = runner.invoke(watchdog.cmd_status)
-                assert result.exit_code == 0
-                assert "DISABLED" in result.output
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=crontab):
+                    result = runner.invoke(watchdog.cmd_status)
+                    assert result.exit_code == 0
+                    assert "DISABLED" in result.output
 
 
 class TestCmdDisable:
@@ -374,6 +381,7 @@ class TestWriteSecureFile:
         watchdog.write_secure_file(test_file, "test content")
         assert test_file.read_text() == "test content"
 
+    @skip_on_windows
     def test_write_secure_file_secure_permissions(self, temp_log_dir):
         """Should create file with secure permissions."""
         test_file = temp_log_dir / "test.txt"
@@ -419,31 +427,34 @@ class TestCmdInstall:
     def test_cmd_install_success(self, runner, mock_audit_log_file):
         """Should install cron jobs successfully."""
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=""):
-                with patch.object(watchdog, "set_crontab", return_value=True):
-                    result = runner.invoke(watchdog.cmd_install)
-                    assert result.exit_code == 0
-                    assert "cron installed" in result.output
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=""):
+                    with patch.object(watchdog, "set_crontab", return_value=True):
+                        result = runner.invoke(watchdog.cmd_install)
+                        assert result.exit_code == 0
+                        assert "cron installed" in result.output
 
     def test_cmd_install_failure(self, runner):
         """Should return error when cron install fails."""
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=""):
-                with patch.object(watchdog, "set_crontab", return_value=False):
-                    result = runner.invoke(watchdog.cmd_install)
-                    assert result.exit_code == 1
-                    assert "failed" in result.output
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=""):
+                    with patch.object(watchdog, "set_crontab", return_value=False):
+                        result = runner.invoke(watchdog.cmd_install)
+                        assert result.exit_code == 1
+                        assert "failed" in result.output
 
     def test_cmd_install_preserves_existing(self, runner, mock_audit_log_file):
         """Should preserve existing cron jobs."""
         existing_cron = "0 * * * * other_job\n"
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=existing_cron):
-                with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
-                    runner.invoke(watchdog.cmd_install)
-                    # Verify existing job is preserved
-                    call_arg = mock_set.call_args[0][0]
-                    assert "other_job" in call_arg
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=existing_cron):
+                    with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
+                        runner.invoke(watchdog.cmd_install)
+                        # Verify existing job is preserved
+                        call_arg = mock_set.call_args[0][0]
+                        assert "other_job" in call_arg
 
 
 class TestCmdUninstall:
@@ -460,30 +471,33 @@ class TestCmdUninstall:
         """Should uninstall cron jobs successfully."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=crontab):
-                with patch.object(watchdog, "set_crontab", return_value=True):
-                    result = runner.invoke(watchdog.cmd_uninstall)
-                    assert result.exit_code == 0
-                    assert "removed" in result.output
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=crontab):
+                    with patch.object(watchdog, "set_crontab", return_value=True):
+                        result = runner.invoke(watchdog.cmd_uninstall)
+                        assert result.exit_code == 0
+                        assert "removed" in result.output
 
     def test_cmd_uninstall_failure(self, runner):
         """Should return error when uninstall fails."""
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=""):
-                with patch.object(watchdog, "set_crontab", return_value=False):
-                    result = runner.invoke(watchdog.cmd_uninstall)
-                    assert result.exit_code == 1
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=""):
+                    with patch.object(watchdog, "set_crontab", return_value=False):
+                        result = runner.invoke(watchdog.cmd_uninstall)
+                        assert result.exit_code == 1
 
     def test_cmd_uninstall_preserves_other_jobs(self, runner, mock_audit_log_file):
         """Should preserve non-blocker cron jobs."""
         crontab = "0 * * * * other_job\n*/2 * * * * nextdns-blocker sync\n"
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=crontab):
-                with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
-                    runner.invoke(watchdog.cmd_uninstall)
-                    call_arg = mock_set.call_args[0][0]
-                    assert "other_job" in call_arg
-                    assert "nextdns-blocker" not in call_arg
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=crontab):
+                    with patch.object(watchdog, "set_crontab", return_value=True) as mock_set:
+                        runner.invoke(watchdog.cmd_uninstall)
+                        call_arg = mock_set.call_args[0][0]
+                        assert "other_job" in call_arg
+                        assert "nextdns-blocker" not in call_arg
 
 
 class TestCmdCheckRestoration:
@@ -511,12 +525,13 @@ class TestCmdCheckRestoration:
             return result
 
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
-                with patch.object(watchdog, "set_crontab", return_value=True):
-                    with patch("subprocess.run"):
-                        result = runner.invoke(watchdog.cmd_check)
-                        assert result.exit_code == 0
-                        assert "sync cron restored" in result.output
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
+                    with patch.object(watchdog, "set_crontab", return_value=True):
+                        with patch("subprocess.run"):
+                            result = runner.invoke(watchdog.cmd_check)
+                            assert result.exit_code == 0
+                            assert "sync cron restored" in result.output
 
     def test_cmd_check_restores_missing_watchdog(
         self, runner, mock_disabled_file, mock_audit_log_file
@@ -534,12 +549,13 @@ class TestCmdCheckRestoration:
             return result
 
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
-                with patch.object(watchdog, "set_crontab", return_value=True):
-                    with patch("subprocess.run"):
-                        result = runner.invoke(watchdog.cmd_check)
-                        assert result.exit_code == 0
-                        assert "watchdog cron restored" in result.output
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", side_effect=get_crontab_side_effect):
+                    with patch.object(watchdog, "set_crontab", return_value=True):
+                        with patch("subprocess.run"):
+                            result = runner.invoke(watchdog.cmd_check)
+                            assert result.exit_code == 0
+                            assert "watchdog cron restored" in result.output
 
 
 class TestAuditLogWatchdog:
@@ -589,33 +605,37 @@ class TestMain:
     def test_main_status_command(self, runner, mock_disabled_file):
         """Should run status command."""
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=""):
-                result = runner.invoke(watchdog.main, ["status"])
-                assert result.exit_code == 0
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=""):
+                    result = runner.invoke(watchdog.main, ["status"])
+                    assert result.exit_code == 0
 
     def test_main_check_command(self, runner, mock_disabled_file):
         """Should run check command."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=crontab):
-                result = runner.invoke(watchdog.main, ["check"])
-                assert result.exit_code == 0
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=crontab):
+                    result = runner.invoke(watchdog.main, ["check"])
+                    assert result.exit_code == 0
 
     def test_main_install_command(self, runner, mock_audit_log_file):
         """Should run install command."""
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=""):
-                with patch.object(watchdog, "set_crontab", return_value=True):
-                    result = runner.invoke(watchdog.main, ["install"])
-                    assert result.exit_code == 0
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=""):
+                    with patch.object(watchdog, "set_crontab", return_value=True):
+                        result = runner.invoke(watchdog.main, ["install"])
+                        assert result.exit_code == 0
 
     def test_main_uninstall_command(self, runner, mock_audit_log_file):
         """Should run uninstall command."""
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=""):
-                with patch.object(watchdog, "set_crontab", return_value=True):
-                    result = runner.invoke(watchdog.main, ["uninstall"])
-                    assert result.exit_code == 0
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=""):
+                    with patch.object(watchdog, "set_crontab", return_value=True):
+                        result = runner.invoke(watchdog.main, ["uninstall"])
+                        assert result.exit_code == 0
 
     def test_main_disable_command(self, runner, mock_disabled_file, mock_audit_log_file):
         """Should run disable command."""
@@ -729,19 +749,20 @@ class TestGeneratePlist:
         assert "/opt/homebrew/bin" in path_env
         assert "/.local/bin" in path_env  # pipx location
 
-    def test_generate_plist_log_paths(self):
+    def test_generate_plist_log_paths(self, temp_log_dir):
         """Should set stdout and stderr to log file."""
         import plistlib
 
+        log_file = temp_log_dir / "test.log"
         content = watchdog.generate_plist(
             label="test",
             program_args=["test"],
             start_interval=60,
-            log_file=Path("/tmp/test.log"),
+            log_file=log_file,
         )
         parsed = plistlib.loads(content)
-        assert parsed["StandardOutPath"] == "/tmp/test.log"
-        assert parsed["StandardErrorPath"] == "/tmp/test.log"
+        assert parsed["StandardOutPath"] == str(log_file)
+        assert parsed["StandardErrorPath"] == str(log_file)
 
 
 class TestLaunchctlCommands:
@@ -840,11 +861,12 @@ class TestCmdInstallMultiplatform:
     def test_cmd_install_linux(self, runner, mock_audit_log_file):
         """Should use cron on Linux."""
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=""):
-                with patch.object(watchdog, "set_crontab", return_value=True):
-                    result = runner.invoke(watchdog.cmd_install)
-                    assert result.exit_code == 0
-                    assert "cron" in result.output
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=""):
+                    with patch.object(watchdog, "set_crontab", return_value=True):
+                        result = runner.invoke(watchdog.cmd_install)
+                        assert result.exit_code == 0
+                        assert "cron" in result.output
 
 
 class TestCmdUninstallMultiplatform:
@@ -876,11 +898,12 @@ class TestCmdUninstallMultiplatform:
     def test_cmd_uninstall_linux(self, runner, mock_audit_log_file):
         """Should use cron on Linux."""
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=""):
-                with patch.object(watchdog, "set_crontab", return_value=True):
-                    result = runner.invoke(watchdog.cmd_uninstall)
-                    assert result.exit_code == 0
-                    assert "Cron" in result.output
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=""):
+                    with patch.object(watchdog, "set_crontab", return_value=True):
+                        result = runner.invoke(watchdog.cmd_uninstall)
+                        assert result.exit_code == 0
+                        assert "Cron" in result.output
 
 
 class TestCmdStatusMultiplatform:
@@ -905,10 +928,11 @@ class TestCmdStatusMultiplatform:
         """Should show cron status on Linux."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=crontab):
-                result = runner.invoke(watchdog.cmd_status)
-                assert result.exit_code == 0
-                assert "cron" in result.output
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=crontab):
+                    result = runner.invoke(watchdog.cmd_status)
+                    assert result.exit_code == 0
+                    assert "cron" in result.output
 
 
 class TestCmdCheckMultiplatform:
@@ -932,9 +956,10 @@ class TestCmdCheckMultiplatform:
         """Should do nothing when cron jobs are present."""
         crontab = "*/2 * * * * nextdns-blocker sync\n* * * * * nextdns-blocker watchdog check\n"
         with patch.object(watchdog, "is_macos", return_value=False):
-            with patch.object(watchdog, "get_crontab", return_value=crontab):
-                result = runner.invoke(watchdog.cmd_check)
-                assert result.exit_code == 0
+            with patch.object(watchdog, "is_windows", return_value=False):
+                with patch.object(watchdog, "get_crontab", return_value=crontab):
+                    result = runner.invoke(watchdog.cmd_check)
+                    assert result.exit_code == 0
 
 
 class TestGetExecutablePath:
