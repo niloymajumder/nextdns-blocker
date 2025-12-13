@@ -41,6 +41,7 @@ PROFILE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{4,30}$")
 # Discord Webhook pattern: Follows Regex for default rl
 DISCORD_WEBHOOK_PATTERN = re.compile(r"^https://discord\.com/api/webhooks/\d+/[a-zA-Z0-9_-]+$")
 
+
 def validate_api_key(api_key: str) -> bool:
     """
     Validate NextDNS API key format.
@@ -70,6 +71,7 @@ def validate_profile_id(profile_id: str) -> bool:
         return False
     return PROFILE_ID_PATTERN.match(profile_id.strip()) is not None
 
+
 def validate_discord_webhook(url: str) -> bool:
     """
     Validate Discord Webhook URL format.
@@ -83,6 +85,7 @@ def validate_discord_webhook(url: str) -> bool:
     if not url or not isinstance(url, str):
         return False
     return DISCORD_WEBHOOK_PATTERN.match(url.strip()) is not None
+
 
 # =============================================================================
 # CONSTANTS

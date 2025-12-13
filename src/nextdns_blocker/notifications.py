@@ -38,7 +38,9 @@ def get_webhook_url() -> Optional[str]:
     return os.getenv("DISCORD_WEBHOOK_URL")
 
 
-def send_discord_notification(domain: str, event_type: str, webhook_url: str = None) -> None:
+def send_discord_notification(
+    domain: str, event_type: str, webhook_url: Optional[str] = None
+) -> None:
     """
     Send a Discord webhook notification for a block/unblock event.
 
@@ -54,7 +56,8 @@ def send_discord_notification(domain: str, event_type: str, webhook_url: str = N
     if not is_notifications_enabled():
         return
 
-    webhook_url = get_webhook_url()
+    if webhook_url is None:
+        webhook_url = get_webhook_url()
     if not webhook_url:
         logger.debug("Discord webhook URL not configured, skipping notification")
         return
@@ -69,8 +72,6 @@ def send_discord_notification(domain: str, event_type: str, webhook_url: str = N
     else:
         logger.warning(f"Unknown event type: {event_type}, skipping notification")
         return
-
-    
 
     # Create Discord embed payload
     payload = {
@@ -99,27 +100,3 @@ def send_discord_notification(domain: str, event_type: str, webhook_url: str = N
     except Exception as e:
         # Catch any other unexpected errors to ensure silent failure
         logger.warning(f"Unexpected error sending Discord notification: {e}")
-
-
-def test_notification_test_payload(mock_requests):
-    """Verify the 'test' event produces the correct payload."""
-    from src.nextdns_blocker.notifications import send_discord_notification
-    
-    # Execute
-    send_discord_notification(
-        event_type="test", 
-        domain="Test Connection",
-        webhook_url="https://discord.com/api/webhooks/123/abc"
-    )
-    
-    # Assert
-    assert mock_requests.call_count == 1
-    call_args = mock_requests.call_args
-    payload = call_args[1]["json"]
-    
-    # Check Emoji and Text
-    assert payload["embeds"][0]["title"] == "🔔 Test Notification"
-    # Check Description
-    assert "Test Connection" in payload["embeds"][0]["description"]
-    # Check Color (Blurple: 5793266 is decimal for 0x5865F2)
-    assert payload["embeds"][0]["color"] == 5793266
