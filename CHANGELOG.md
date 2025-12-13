@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.3.0] - 2025-12-12
+
+### Added
+- **Windows Platform Support**: Full native Windows support
+  - PowerShell installer script (`install.ps1`) for automated setup
+  - Windows Task Scheduler integration for sync and watchdog jobs
+  - PowerShell log rotation script (`setup-logrotate.ps1`)
+  - Windows-specific paths via `platformdirs` (`%APPDATA%`, `%LOCALAPPDATA%`)
+  - Comprehensive Windows troubleshooting documentation in README
+- **Study Mode Example**: New `examples/study-mode.json` configuration
+  - Blocks distracting sites during study hours (weekdays 8am-12pm, 2pm-6pm)
+  - Allows access during lunch breaks and evenings
+  - Full access on weekends
+- **E2E Test Suite**: Comprehensive end-to-end tests
+  - Full workflow testing from init to sync
+  - Platform-specific scheduler tests
+  - Improved test isolation and mocking
+
+### Changed
+- **Test Coverage**: Improved from 85% to 94%
+- **README**: Added status badges (PyPI version, downloads, Python versions, License, CI status)
+
+### Fixed
+- Windows file locking and permission handling tests
+- Platform detection mocking in pipx fallback tests
+
 ## [5.2.0] - 2025-12-11
 
 ### Added
@@ -299,6 +325,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simple time-based scheduling
 - Cron-based automatic sync
 
+[5.3.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.2.0...v5.3.0
+[5.2.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.1.0...v5.2.0
 [5.1.0]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.0.2...v5.1.0
 [5.0.2]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.0.1...v5.0.2
 [5.0.1]: https://github.com/aristeoibarra/nextdns-blocker/compare/v5.0.0...v5.0.1

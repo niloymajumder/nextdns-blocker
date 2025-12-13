@@ -516,7 +516,7 @@ pytest tests/ -v
 pytest tests/ --cov=nextdns_blocker --cov-report=html
 ```
 
-Current coverage: **85%** with **379 tests**.
+Current coverage: **94%** with **1154 tests**.
 
 ### Code Quality
 
@@ -536,6 +536,7 @@ The codebase follows these practices:
   - `gaming.json` - Gaming platforms scheduling
   - `social-media.json` - Social networks management
   - `parental-control.json` - Protected content blocking
+  - `study-mode.json` - Student-focused scheduling for distraction-free studying
 - [domains.json.example](domains.json.example) - Example configuration file
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 

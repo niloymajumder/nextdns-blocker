@@ -34,6 +34,12 @@ Files
 	- Domains are marked with `"protected": true` and have no schedule (always blocked).
 	- `protected: true` prevents these domains from being unblocked via the CLI — useful for enforcing policies.
 
+- `study-mode.json`: Student-focused scheduling for distraction-free studying.
+	- Blocks social media, video streaming, and entertainment sites during weekday study hours.
+	- Allows access during lunch breaks (12:00-14:00) and evenings (18:00+).
+	- Full access on weekends for relaxation.
+	- Perfect for students who want to focus during school/homework time.
+
 Quick tips
 - To make a domain always blocked, omit the `schedule` field or set `"schedule": null`.
 - To allow a domain only during specific windows, set `available_hours` with `days` and `time_ranges`.
