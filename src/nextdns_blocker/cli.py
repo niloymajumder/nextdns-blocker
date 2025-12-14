@@ -8,7 +8,6 @@ from typing import Optional
 
 import click
 from rich.console import Console
-from rich.theme import Theme
 
 from . import __version__
 from .client import NextDNSClient
@@ -247,11 +246,16 @@ def unblock(domain: str, config_dir: Optional[Path]) -> None:
         protected = get_protected_domains(domains)
 
         if not validate_domain(domain):
-            console.print(f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False)
+            console.print(
+                f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False
+            )
             sys.exit(1)
 
         if domain in protected:
-            console.print(f"\n  [blue]Error: '{domain}' is protected and cannot be unblocked[/blue]\n", highlight=False)
+            console.print(
+                f"\n  [blue]Error: '{domain}' is protected and cannot be unblocked[/blue]\n",
+                highlight=False,
+            )
             sys.exit(1)
 
         client = NextDNSClient(
@@ -364,7 +368,9 @@ def sync(
 
         if not dry_run:
             if blocked_count or unblocked_count:
-                console.print(f"  Sync: [red]{blocked_count} blocked[/red], [green]{unblocked_count} unblocked[/green]")
+                console.print(
+                    f"  Sync: [red]{blocked_count} blocked[/red], [green]{unblocked_count} unblocked[/green]"
+                )
             elif verbose:
                 console.print("  Sync: [green]No changes needed[/green]")
 
@@ -420,7 +426,7 @@ def status(config_dir: Optional[Path]) -> None:
 
             expected = "block" if should_block else "allow"
             match = "[green]✓[/green]" if (should_block == is_blocked) else "[red]✗ MISMATCH[/red]"
-            protected_flag = " [blue][protected][/blue]" if is_protected else ""
+            protected_flag = " [blue]\\[protected][/blue]" if is_protected else ""
 
             # Pad domain for alignment
             console.print(
@@ -484,7 +490,9 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
     """Add DOMAIN to allowlist."""
     try:
         if not validate_domain(domain):
-            console.print(f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False)
+            console.print(
+                f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False
+            )
             sys.exit(1)
 
         config = load_config(config_dir)
@@ -494,7 +502,9 @@ def allow(domain: str, config_dir: Optional[Path]) -> None:
 
         # Warn if domain is in denylist
         if client.is_blocked(domain):
-            console.print(f"  [yellow]Warning: '{domain}' is currently blocked in denylist[/yellow]")
+            console.print(
+                f"  [yellow]Warning: '{domain}' is currently blocked in denylist[/yellow]"
+            )
 
         if client.allow(domain):
             audit_log("ALLOW", domain)
@@ -522,7 +532,9 @@ def disallow(domain: str, config_dir: Optional[Path]) -> None:
     """Remove DOMAIN from allowlist."""
     try:
         if not validate_domain(domain):
-            console.print(f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False)
+            console.print(
+                f"\n  [red]Error: Invalid domain format '{domain}'[/red]\n", highlight=False
+            )
             sys.exit(1)
 
         config = load_config(config_dir)
@@ -534,7 +546,9 @@ def disallow(domain: str, config_dir: Optional[Path]) -> None:
             audit_log("DISALLOW", domain)
             console.print(f"\n  [green]Removed from allowlist: {domain}[/green]\n")
         else:
-            console.print("\n  [red]Error: Failed to remove from allowlist[/red]\n", highlight=False)
+            console.print(
+                "\n  [red]Error: Failed to remove from allowlist[/red]\n", highlight=False
+            )
             sys.exit(1)
 
     except ConfigurationError as e:
@@ -573,7 +587,9 @@ def health(config_dir: Optional[Path]) -> None:
     checks_total += 1
     try:
         domains, allowlist = load_domains(config["script_dir"], config.get("domains_url"))
-        console.print(f"  [green][✓][/green] Domains loaded ({len(domains)} domains, {len(allowlist)} allowlist)")
+        console.print(
+            f"  [green][✓][/green] Domains loaded ({len(domains)} domains, {len(allowlist)} allowlist)"
+        )
         checks_passed += 1
     except ConfigurationError as e:
         console.print(f"  [red][✗][/red] Domains: {e}")
@@ -589,7 +605,9 @@ def health(config_dir: Optional[Path]) -> None:
                 age_mins = cache_status.get("age_seconds", 0) // 60
                 expired = "expired" if cache_status.get("expired") else "valid"
                 color = "yellow" if cache_status.get("expired") else "green"
-                console.print(f"  [blue][i][/blue] Remote domains cache: [{color}]{expired}[/{color}] (age: {age_mins}m)")
+                console.print(
+                    f"  [blue][i][/blue] Remote domains cache: [{color}]{expired}[/{color}] (age: {age_mins}m)"
+                )
         else:
             console.print("  [blue][i][/blue] Remote domains cache: not present")
 
@@ -640,7 +658,10 @@ def test_notifications(config_dir: Optional[Path]) -> None:
         webhook_url = config.get("discord_webhook_url")
 
         if not webhook_url:
-            console.print("\n  [red]Error: DISCORD_WEBHOOK_URL is not set in configuration.[/red]", highlight=False)
+            console.print(
+                "\n  [red]Error: DISCORD_WEBHOOK_URL is not set in configuration.[/red]",
+                highlight=False,
+            )
             console.print("      Please add it to your .env file.\n", highlight=False)
             sys.exit(1)
 
