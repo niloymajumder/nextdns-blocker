@@ -50,7 +50,7 @@ repos:
 
 # Configuration
 default_language_version:
-  python: python3.9
+  python: python3
 
 ci:
   autofix_commit_msg: "style: auto-fix by pre-commit hooks"
