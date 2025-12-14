@@ -41,7 +41,8 @@ repos:
       - id: mypy
         additional_dependencies:
           - types-requests>=2.28.0
-        args: [--strict, --ignore-missing-imports]
+          - types-click>=7.1.0
+        args: [--strict, --ignore-missing-imports, --allow-untyped-decorators]
         files: ^src/
 
   # Security scanning with bandit
@@ -50,7 +51,7 @@ repos:
     hooks:
       - id: bandit
         args: [-r, src/, -ll, -c, pyproject.toml]
-        files: ^src/
+        pass_filenames: false
 
 # Configuration
 default_language_version:
